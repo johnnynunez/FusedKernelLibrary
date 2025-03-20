@@ -79,7 +79,7 @@ namespace fk {
 
     template <typename IOp>
     FK_HOST_DEVICE_CNST GetOutputType_t<IOp> compute(const GetInputType_t<IOp>& input,
-                                                                       const IOp& instantiableOperation) {
+                                                     const IOp& instantiableOperation) {
         static_assert(isComputeType<IOp>, "Function compute only works with IOp InstanceTypes of the group ComputeTypeList");
         if constexpr (isUnaryType<IOp>) {
             return IOp::Operation::exec(input);
