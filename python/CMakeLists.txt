@@ -96,6 +96,21 @@ if(BUILD_PYTHON_BINDINGS)
         endif()
     endif()
     
+    # HIP/ROCm support
+    if(ENABLE_HIP)
+        target_compile_options(fkl_ffi PRIVATE $<$<COMPILE_LANGUAGE:HIP>:-fPIC>)
+        target_sources(fkl_ffi PRIVATE src/fkl_stream_hip.cpp)
+        # Link HIP libraries
+        if(ROCM_HIP_LIBRARY)
+            target_link_libraries(fkl_ffi PRIVATE ${ROCM_HIP_LIBRARY})
+        endif()
+        # Add HIP include directories
+        if(ROCM_INCLUDE_DIR)
+            target_include_directories(fkl_ffi PRIVATE ${ROCM_INCLUDE_DIR})
+        endif()
+        target_compile_definitions(fkl_ffi PUBLIC FKL_ENABLE_HIP)
+    endif()
+    
     # Set output name
     set_target_properties(fkl_ffi PROPERTIES
         OUTPUT_NAME "_fkl_ffi"

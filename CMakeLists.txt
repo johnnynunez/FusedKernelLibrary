@@ -26,6 +26,8 @@ if (MSVC_VERSION LESS 1920)
 endif()
   
 include(CheckLanguage)
+
+# Check for CUDA
 check_language(CUDA)
 if (CMAKE_CUDA_COMPILER)
     option (ENABLE_CUDA "Enable CUDA support" ON)
@@ -34,6 +36,18 @@ if (CMAKE_CUDA_COMPILER)
     endif()
 else()
     message(STATUS "CUDA compiler not found, CUDA support will be disabled.")     
+endif()
+
+# Check for HIP/ROCm
+check_language(HIP)
+if (CMAKE_HIP_COMPILER)
+    option (ENABLE_HIP "Enable HIP/ROCm support" OFF)
+    if (${ENABLE_HIP})
+        include(cmake/hip_init.cmake)
+    endif()
+else()
+    message(STATUS "HIP compiler not found, HIP/ROCm support will be disabled.")
+    message(STATUS "To enable HIP: set ROCM_PATH environment variable and enable with -DENABLE_HIP=ON")
 endif()
 
 add_subdirectory(include)

@@ -47,8 +47,10 @@ namespace fk {
 #endif
 #undef PARALLEL_ARCHITECTURES
 
-#if defined(__NVCC__) || CLANG_HOST_DEVICE
+#if defined(__NVCC__) || (CLANG_HOST_DEVICE && !defined(__HIP__))
     constexpr ParArch defaultParArch = ParArch::GPU_NVIDIA;
+#elif defined(__HIP__) || defined(__HIPCC__)
+    constexpr ParArch defaultParArch = ParArch::GPU_AMD;
 #elif defined(NVRTC_ENABLED)
     // Note: when using JIT, code compiled with the Host compiler 
     // will have defaultParArch = ParArch::GPU_NVIDIA_JIT

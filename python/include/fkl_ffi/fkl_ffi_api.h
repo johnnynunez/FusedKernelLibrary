@@ -31,6 +31,7 @@ TVM_DLL int FKLStreamCreate(FKLStreamHandle* out);
 TVM_DLL int FKLStreamDestroy(FKLStreamHandle stream);
 TVM_DLL int FKLStreamSync(FKLStreamHandle stream);
 TVM_DLL int FKLStreamFromCUDAStream(FKLStreamHandle* out, void* cuda_stream);
+TVM_DLL int FKLStreamFromHIPStream(FKLStreamHandle* out, void* hip_stream);
 
 // Tensor operations
 TVM_DLL int FKLTensorCreate(DLTensor* tensor, FKLTensorHandle* out);

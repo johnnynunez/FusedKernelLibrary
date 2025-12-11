@@ -101,9 +101,11 @@ When you combine operations:
 
 ## Building
 
+### CUDA Build
+
 ```bash
 # Configure CMake
-cmake -B build -DBUILD_PYTHON_BINDINGS=ON
+cmake -B build -DBUILD_PYTHON_BINDINGS=ON -DENABLE_CUDA=ON
 
 # Build
 cmake --build build
@@ -111,6 +113,28 @@ cmake --build build
 # Install
 pip install -e .
 ```
+
+### HIP/ROCm Build (AMD GPUs)
+
+```bash
+# Set ROCm path
+export ROCM_PATH=/opt/rocm
+
+# Configure with HIP
+cmake -B build \
+    -DBUILD_PYTHON_BINDINGS=ON \
+    -DENABLE_HIP=ON \
+    -DENABLE_CUDA=OFF \
+    -DCMAKE_HIP_ARCHITECTURES="gfx906"  # Your GPU architecture
+
+# Build
+cmake --build build
+
+# Install
+pip install -e .
+```
+
+See [BUILD_HIP.md](../BUILD_HIP.md) for detailed HIP/ROCm build instructions.
 
 ## JIT Compilation
 

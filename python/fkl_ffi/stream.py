@@ -15,19 +15,34 @@ class Stream:
     on the GPU. Multiple streams can execute concurrently.
     """
     
-    def __init__(self, cuda_stream: Optional[int] = None):
+    def __init__(self, cuda_stream: Optional[int] = None, hip_stream: Optional[int] = None):
         """
         Create a new GPU stream.
         
         Args:
-            cuda_stream: Optional CUDA stream handle. If None, creates a new stream.
+            cuda_stream: Optional CUDA stream handle (for NVIDIA GPUs). 
+                        If None, creates a new stream.
+            hip_stream: Optional HIP stream handle (for AMD GPUs).
+                       If None, creates a new stream.
+        
+        Note: Only one of cuda_stream or hip_stream should be provided.
         """
         self._handle = None
         self._lib = None
         self._init_lib()
         
-        if cuda_stream is not None:
-            # Create from existing CUDA stream
+        if hip_stream is not None:
+            # Create from existing HIP stream (AMD GPU)
+            handle_ptr = ctypes.c_void_p()
+            ret = self._lib.FKLStreamFromHIPStream(
+                ctypes.byref(handle_ptr),
+                ctypes.c_void_p(hip_stream)
+            )
+            if ret != 0:
+                raise RuntimeError("Failed to create FKL stream from HIP stream")
+            self._handle = handle_ptr.value
+        elif cuda_stream is not None:
+            # Create from existing CUDA stream (NVIDIA GPU)
             handle_ptr = ctypes.c_void_p()
             ret = self._lib.FKLStreamFromCUDAStream(
                 ctypes.byref(handle_ptr),
@@ -97,6 +112,12 @@ class Stream:
             ctypes.c_void_p
         ]
         self._lib.FKLStreamFromCUDAStream.restype = ctypes.c_int
+        
+        self._lib.FKLStreamFromHIPStream.argtypes = [
+            ctypes.POINTER(ctypes.c_void_p),
+            ctypes.c_void_p
+        ]
+        self._lib.FKLStreamFromHIPStream.restype = ctypes.c_int
     
     def sync(self):
         """Synchronize the stream, waiting for all operations to complete."""

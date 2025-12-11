@@ -17,6 +17,10 @@
 #include <memory>
 #include <cstring>
 
+#if defined(__HIP__) || defined(__HIPCC__)
+#include <hip/hip_runtime.h>
+#endif
+
 using namespace fk;
 
 struct FKLStream {
@@ -27,6 +31,21 @@ struct FKLStream {
     explicit FKLStream(void* cuda_stream) {
         #if defined(__NVCC__) || defined(__CUDACC__)
         stream = std::make_shared<fk::Stream>(reinterpret_cast<cudaStream_t>(cuda_stream));
+        #elif defined(__HIP__) || defined(__HIPCC__)
+        // HIP streams are compatible with CUDA streams (same type)
+        stream = std::make_shared<fk::Stream>(reinterpret_cast<hipStream_t>(cuda_stream));
+        #else
+        stream = std::make_shared<fk::Stream>();
+        #endif
+    }
+    
+    explicit FKLStream(void* hip_stream, bool is_hip) {
+        #if defined(__HIP__) || defined(__HIPCC__)
+        if (is_hip) {
+            stream = std::make_shared<fk::Stream>(reinterpret_cast<hipStream_t>(hip_stream));
+        } else {
+            stream = std::make_shared<fk::Stream>();
+        }
         #else
         stream = std::make_shared<fk::Stream>();
         #endif
@@ -75,6 +94,23 @@ int FKLStreamFromCUDAStream(FKLStreamHandle* out, void* cuda_stream) {
     }
     try {
         *out = new FKLStream(cuda_stream);
+        return 0;
+    } catch (...) {
+        return -1;
+    }
+}
+
+int FKLStreamFromHIPStream(FKLStreamHandle* out, void* hip_stream) {
+    if (out == nullptr) {
+        return -1;
+    }
+    try {
+        #if defined(__HIP__) || defined(__HIPCC__)
+        *out = new FKLStream(hip_stream, true);
+        #else
+        // HIP not available, create default stream
+        *out = new FKLStream();
+        #endif
         return 0;
     } catch (...) {
         return -1;
