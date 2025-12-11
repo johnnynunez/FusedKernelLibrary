@@ -60,3 +60,9 @@ if (${ENABLE_BENCHMARK})
     enable_testing()
     add_subdirectory(benchmarks)
 endif()
+
+# Python bindings with TVM-FFI
+option(BUILD_PYTHON_BINDINGS "Build Python bindings using TVM-FFI" OFF)
+if (${BUILD_PYTHON_BINDINGS})
+    add_subdirectory(python)
+endif()

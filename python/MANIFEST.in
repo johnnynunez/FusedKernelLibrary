@@ -1,0 +1,8 @@
+include README.md
+include LICENSE
+include pyproject.toml
+recursive-include python/fkl_ffi *.py
+recursive-include python/examples *.py
+recursive-include python/include *.h
+recursive-include python/src *.cpp *.h
+
