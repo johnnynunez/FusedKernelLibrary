@@ -15,20 +15,58 @@
 #ifdef FKL_ENABLE_JIT
 
 #include "fkl_ffi/fkl_ffi_api.h"
-#include <nvrtc.h>
 #include <cuda_runtime.h>
 #include <memory>
 #include <vector>
 #include <string>
 #include <sstream>
+#include <fstream>
+#include <cstdlib>
+#include <cstdio>
+#include <sys/stat.h>
 
-#define NVRTC_SAFE_CALL(x)                                        \
-  do {                                                            \
-    nvrtcResult result = x;                                       \
-    if (result != NVRTC_SUCCESS) {                                \
-      return -1;                                                  \
-    }                                                             \
-  } while(0)
+#ifdef _WIN32
+#include <windows.h>
+#include <process.h>
+#else
+#include <unistd.h>
+#include <sys/wait.h>
+#endif
+
+// JIT compilation using nvcc (not NVRTC) because FKL operations
+// have both HOST code (build functions) and DEVICE code (exec functions)
+// in the same struct. NVRTC can only compile device code.
+
+static std::string get_temp_directory() {
+#ifdef _WIN32
+    char temp_path[MAX_PATH];
+    GetTempPathA(MAX_PATH, temp_path);
+    return std::string(temp_path);
+#else
+    const char* tmpdir = getenv("TMPDIR");
+    if (tmpdir) return std::string(tmpdir);
+    return "/tmp";
+#endif
+}
+
+static std::string create_temp_file(const std::string& prefix, const std::string& suffix) {
+    std::string tmpdir = get_temp_directory();
+    std::string filename = tmpdir + "/" + prefix;
+    
+#ifdef _WIN32
+    char unique_name[MAX_PATH];
+    GetTempFileNameA(tmpdir.c_str(), prefix.c_str(), 0, unique_name);
+    return std::string(unique_name) + suffix;
+#else
+    char template_str[256];
+    snprintf(template_str, sizeof(template_str), "%s/%s_XXXXXX%s", 
+             tmpdir.c_str(), prefix.c_str(), suffix.c_str());
+    int fd = mkstemps(template_str, suffix.length());
+    if (fd == -1) return "";
+    close(fd);
+    return std::string(template_str);
+#endif
+}
 
 int FKLJITCompileKernel(
     const char* kernel_code,
@@ -42,69 +80,85 @@ int FKLJITCompileKernel(
         return -1;
     }
     
-    nvrtcProgram prog;
+    // Generate temporary file names
+    std::string cu_file = create_temp_file("fkl_jit_", ".cu");
+    std::string so_file = create_temp_file("fkl_jit_", ".so");
     
-    // Create the program
-    std::vector<const char*> opts;
-    std::string opt_str;
+    if (cu_file.empty() || so_file.empty()) {
+        return -1;
+    }
     
+    // Write kernel code to .cu file
+    // The kernel code must include BOTH host and device code
+    // because FKL operations have build() (host) and exec() (device) in same struct
+    std::ofstream out(cu_file);
+    if (!out.is_open()) {
+        return -1;
+    }
+    
+    // Write includes needed for FKL
+    out << "#include <cuda_runtime.h>\n";
+    out << "#include <device_launch_parameters.h>\n";
+    out << "// FKL JIT compiled kernel\n";
+    out << "// This includes both HOST code (build functions) and DEVICE code (exec functions)\n\n";
+    
+    // Write the kernel code
+    out << kernel_code;
+    out.close();
+    
+    // Build command: use nvcc (not NVRTC) because we need to compile host+device code
+    std::ostringstream cmd;
+    cmd << "nvcc ";
+    
+    // Add options
     if (options != nullptr && strlen(options) > 0) {
-        opt_str = options;
+        cmd << options << " ";
     } else {
         // Default options
-        opt_str = "-arch=sm_75"; // Default to compute capability 7.5
+        cmd << "-arch=sm_75 ";  // Default compute capability
     }
     
-    // Parse options (simple space-separated)
-    std::istringstream iss(opt_str);
-    std::string opt;
-    while (iss >> opt) {
-        opts.push_back(opt.c_str());
-    }
+    // Compile to shared library
+    cmd << "--shared ";
+    cmd << "-Xcompiler -fPIC ";
+    cmd << "-o " << so_file << " ";
+    cmd << cu_file;
     
-    NVRTC_SAFE_CALL(nvrtcCreateProgram(
-        &prog,
-        kernel_code,
-        kernel_name,
-        0,
-        nullptr,
-        nullptr
-    ));
-    
-    // Compile the program
-    nvrtcResult compileResult = nvrtcCompileProgram(prog, opts.size(), opts.data());
-    
-    // Get compilation log
-    size_t logSize;
-    nvrtcGetProgramLogSize(prog, &logSize);
-    if (logSize > 1) {
-        std::vector<char> log(logSize);
-        nvrtcGetProgramLog(prog, log.data());
-        // Log could be used for error reporting
-    }
-    
-    if (compileResult != NVRTC_SUCCESS) {
-        nvrtcDestroyProgram(&prog);
+    // Execute nvcc
+    int ret = system(cmd.str().c_str());
+    if (ret != 0) {
+        // Cleanup
+        remove(cu_file.c_str());
         return -1;
     }
     
-    // Get PTX
-    size_t ptxSize;
-    NVRTC_SAFE_CALL(nvrtcGetPTXSize(prog, &ptxSize));
-    std::vector<char> ptx(ptxSize);
-    NVRTC_SAFE_CALL(nvrtcGetPTX(prog, ptx.data()));
+    // Read compiled .so file
+    std::ifstream in(so_file, std::ios::binary | std::ios::ate);
+    if (!in.is_open()) {
+        remove(cu_file.c_str());
+        remove(so_file.c_str());
+        return -1;
+    }
     
-    // For now, we return PTX. In a full implementation, you might want to
-    // compile PTX to CUBIN using cuModuleLoadDataEx
-    *cubin_out = malloc(ptxSize);
+    size_t file_size = in.tellg();
+    in.seekg(0, std::ios::beg);
+    
+    *cubin_out = malloc(file_size);
     if (*cubin_out == nullptr) {
-        nvrtcDestroyProgram(&prog);
+        in.close();
+        remove(cu_file.c_str());
+        remove(so_file.c_str());
         return -1;
     }
-    memcpy(*cubin_out, ptx.data(), ptxSize);
-    *cubin_size_out = ptxSize;
     
-    nvrtcDestroyProgram(&prog);
+    in.read(static_cast<char*>(*cubin_out), file_size);
+    in.close();
+    *cubin_size_out = file_size;
+    
+    // Cleanup temp files (optional - could keep for debugging)
+    remove(cu_file.c_str());
+    // Keep .so file for now - might be needed for loading
+    
     return 0;
 }
 
@@ -112,13 +166,13 @@ int FKLJITLoadModule(
     const char* module_path,
     TVMFFIObjectHandle* module_out
 ) {
-    // This would load a pre-compiled module
-    // Implementation depends on TVM-FFI module loading API
+    // Load a pre-compiled module (.so file compiled with nvcc)
     if (module_path == nullptr || module_out == nullptr) {
         return -1;
     }
     
-    // Placeholder - would use TVM-FFI Module::LoadFromFile
+    // Use TVM-FFI Module::LoadFromFile or dlopen
+    // For now, placeholder
     return -1;
 }
 

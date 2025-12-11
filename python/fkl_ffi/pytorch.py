@@ -137,28 +137,66 @@ class PyTorchFKL:
         """
         Generate CUDA kernel code from operation chain.
         
+        IMPORTANT: This must generate BOTH HOST and DEVICE code because
+        FKL operations have build() functions (HOST) and exec() functions (DEVICE)
+        in the same struct. We need nvcc (not NVRTC) to compile this.
+        
         This dynamically generates kernel code based on the operations
         the user composed. This is where the magic happens!
         """
         kernel_name = kernel_name or "fkl_kernel"
         
-        # Generate kernel signature
+        # Generate complete CUDA file with both HOST and DEVICE code
         code = f"""
 #include <cuda_runtime.h>
 #include <device_launch_parameters.h>
+#include <vector>
+#include <memory>
 
-// Dynamically generated kernel from composed operations
-// This kernel is created at runtime based on user's operation chain
+// ============================================================================
+// FKL JIT Generated Kernel
+// ============================================================================
+// This file contains BOTH:
+//   - HOST code: build() functions, parameter setup, kernel launch
+//   - DEVICE code: exec() functions, actual computation
+//
+// Therefore, we MUST use nvcc (not NVRTC) to compile this!
+// NVRTC can only compile device code, but FKL operations need host code too.
+// ============================================================================
 
-extern "C" __global__ void {kernel_name}(
+// Device code (exec functions)
+__device__ float exec_mul(float input, float value) {{
+    return input * value;
+}}
+
+__device__ float exec_add(float input, float value) {{
+    return input + value;
+}}
+
+__device__ float exec_sub(float input, float value) {{
+    return input - value;
+}}
+
+__device__ float exec_div(float input, float value) {{
+    return input / value;
+}}
+
+// Main kernel (device code)
+extern "C" __global__ void {kernel_name}_kernel(
 """
         
         # Add parameters based on operations
-        # This is simplified - real implementation would analyze operations
         code += "    float* input,\n"
         code += "    float* output,\n"
-        code += "    int N\n"
-        code += ") {\n"
+        code += "    int N"
+        
+        # Add operation parameters
+        for i, op in enumerate(chain.operations):
+            if op.op_type in ["Mul", "Add", "Sub", "Div"]:
+                value = op.params.get("value", 1.0)
+                code += f",\n    float op_{i}_value"
+        
+        code += "\n) {\n"
         code += "    int idx = blockIdx.x * blockDim.x + threadIdx.x;\n"
         code += "    if (idx >= N) return;\n\n"
         
@@ -167,28 +205,67 @@ extern "C" __global__ void {kernel_name}(
         code += "    float value = input[idx];\n\n"
         
         # Process each operation
+        param_idx = 0
         for i, op in enumerate(chain.operations):
             if op.op_type == "Mul":
-                value = op.params.get("value", 1.0)
-                code += f"    // Operation {i+1}: Multiply by {value}\n"
-                code += f"    value = value * {value}f;\n\n"
+                code += f"    // Operation {i+1}: Multiply\n"
+                code += f"    value = exec_mul(value, op_{param_idx}_value);\n\n"
+                param_idx += 1
             elif op.op_type == "Add":
-                value = op.params.get("value", 0.0)
-                code += f"    // Operation {i+1}: Add {value}\n"
-                code += f"    value = value + {value}f;\n\n"
+                code += f"    // Operation {i+1}: Add\n"
+                code += f"    value = exec_add(value, op_{param_idx}_value);\n\n"
+                param_idx += 1
             elif op.op_type == "Sub":
-                value = op.params.get("value", 0.0)
-                code += f"    // Operation {i+1}: Subtract {value}\n"
-                code += f"    value = value - {value}f;\n\n"
+                code += f"    // Operation {i+1}: Subtract\n"
+                code += f"    value = exec_sub(value, op_{param_idx}_value);\n\n"
+                param_idx += 1
             elif op.op_type == "Div":
-                value = op.params.get("value", 1.0)
-                code += f"    // Operation {i+1}: Divide by {value}\n"
-                code += f"    value = value / {value}f;\n\n"
-            # Add more operation types as needed
+                code += f"    // Operation {i+1}: Divide\n"
+                code += f"    value = exec_div(value, op_{param_idx}_value);\n\n"
+                param_idx += 1
         
         code += "    // Write output\n"
         code += "    output[idx] = value;\n"
-        code += "}\n"
+        code += "}\n\n"
+        
+        # HOST code: build function and kernel launcher
+        code += """
+// HOST code: build function and kernel launcher
+// This is why we need nvcc, not NVRTC!
+extern "C" void launch_""" + kernel_name + """(
+    float* input,
+    float* output,
+    int N,
+    cudaStream_t stream
+"""
+        
+        # Add operation parameters to host function
+        for i, op in enumerate(chain.operations):
+            if op.op_type in ["Mul", "Add", "Sub", "Div"]:
+                value = op.params.get("value", 1.0)
+                code += f",\n    float op_{i}_value"
+        
+        code += """
+) {
+    // Calculate grid and block dimensions
+    int threads_per_block = 256;
+    int blocks_per_grid = (N + threads_per_block - 1) / threads_per_block;
+    
+    // Launch kernel
+    """ + kernel_name + """_kernel<<<blocks_per_grid, threads_per_block, 0, stream>>>(
+        input,
+        output,
+        N"""
+        
+        # Add operation parameters to kernel launch
+        for i, op in enumerate(chain.operations):
+            if op.op_type in ["Mul", "Add", "Sub", "Div"]:
+                code += f",\n        op_{i}_value"
+        
+        code += """
+    );
+}
+"""
         
         return code
     

@@ -36,28 +36,54 @@ class JITCompiler:
         options: Optional[Union[str, list]] = None
     ) -> bytes:
         """
-        Compile a CUDA kernel to PTX/CUBIN.
+        Compile a CUDA kernel using nvcc (not NVRTC).
+        
+        IMPORTANT: FKL operations have both HOST code (build functions) 
+        and DEVICE code (exec functions) in the same struct. Therefore,
+        we MUST use nvcc to compile, not NVRTC (which only compiles device code).
         
         Args:
-            kernel_code: CUDA kernel source code
+            kernel_code: Complete CUDA source code (host + device)
             kernel_name: Name of the kernel function
             options: Compilation options (string or list of strings)
                     Default: ["-arch=sm_75"]
         
         Returns:
-            Compiled kernel as bytes (PTX or CUBIN)
+            Compiled kernel as bytes (.so file)
         """
+        import ctypes
+        
         if options is None:
             options = "-arch=sm_75"
         elif isinstance(options, list):
             options = " ".join(options)
         
-        # Call JIT compile function
-        result = self._lib.get_global_func("fkl.JIT.compile_kernel")(
-            kernel_code,
-            kernel_name,
-            options
+        # Call JIT compile function (uses nvcc internally)
+        kernel_code_bytes = kernel_code.encode('utf-8')
+        kernel_name_bytes = kernel_name.encode('utf-8')
+        options_bytes = options.encode('utf-8')
+        
+        # Allocate output buffers
+        cubin_ptr = ctypes.POINTER(ctypes.c_void_p)()
+        cubin_size = ctypes.c_size_t()
+        
+        ret = self._lib.FKLJITCompileKernel(
+            kernel_code_bytes,
+            kernel_name_bytes,
+            options_bytes,
+            ctypes.byref(cubin_ptr),
+            ctypes.byref(cubin_size)
         )
+        
+        if ret != 0:
+            raise RuntimeError(f"Failed to compile kernel '{kernel_name}' with nvcc")
+        
+        # Copy compiled code
+        result = ctypes.string_at(cubin_ptr, cubin_size.value)
+        
+        # Free allocated memory
+        if cubin_ptr:
+            ctypes.CDLL(None).free(cubin_ptr)
         
         return bytes(result)
     

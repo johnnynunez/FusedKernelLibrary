@@ -37,7 +37,21 @@ TVM_DLL int FKLTensorCreate(DLTensor* tensor, FKLTensorHandle* out);
 TVM_DLL int FKLTensorDestroy(FKLTensorHandle tensor);
 TVM_DLL int FKLTensorGetDLTensor(FKLTensorHandle tensor, DLTensor** out);
 
-// JIT compilation (if enabled)
+// Execute operations using FKL's existing system
+// This uses the build() functions (HOST) and exec() functions (DEVICE) 
+// that are already compiled. No code generation needed!
+// 
+// Note: This is a placeholder - full implementation would need to handle
+// variadic template operations from Python, which is complex.
+// The real solution is to use FKL's executeOperations directly.
+TVM_DLL int FKLExecuteOperations(
+    FKLStreamHandle stream
+    // In real implementation: variadic operations
+    // This is complex because executeOperations is a template variadic function
+);
+
+// JIT compilation (if enabled) - ONLY if you really need dynamic code generation
+// Otherwise, use FKLExecuteOperations which uses the existing compiled system
 #ifdef FKL_ENABLE_JIT
 TVM_DLL int FKLJITCompileKernel(
     const char* kernel_code,
