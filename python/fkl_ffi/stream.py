@@ -65,18 +65,20 @@ class Stream:
         import os
         from pathlib import Path
         
-        # Try to load the shared library
+        # The library should be in the same directory as this Python file
+        # (fkl_ffi/_fkl_ffi.so in site-packages)
         lib_name = "_fkl_ffi"
         if os.name == 'nt':  # Windows
             lib_name = f"{lib_name}.dll"
         elif os.name == 'posix':  # Linux/macOS
-            lib_name = f"lib{lib_name}.so" if os.uname().sysname != 'Darwin' else f"lib{lib_name}.dylib"
+            lib_name = f"{lib_name}.so" if os.uname().sysname != 'Darwin' else f"{lib_name}.dylib"
         
-        # Try multiple paths
+        # Try multiple paths in order of preference
         possible_paths = [
-            Path(__file__).parent.parent / lib_name,
-            Path(__file__).parent.parent.parent / "build" / "python" / lib_name,
-            Path.cwd() / lib_name,
+            Path(__file__).parent / lib_name,  # Same directory as Python package (installed location)
+            Path(__file__).parent.parent / "build" / "python" / lib_name,  # Build directory (development)
+            Path(__file__).parent.parent / lib_name,  # Parent directory
+            Path.cwd() / lib_name,  # Current working directory
         ]
         
         lib_path = None
@@ -86,13 +88,14 @@ class Stream:
                 break
         
         if lib_path is None:
-            # Try system library path
+            # Try system library path (e.g., LD_LIBRARY_PATH)
             try:
                 self._lib = ctypes.CDLL(lib_name)
             except OSError:
                 raise RuntimeError(
                     f"Failed to find FKL FFI library '{lib_name}'. "
-                    f"Make sure the library is built and available."
+                    f"Tried paths: {[str(p) for p in possible_paths]}. "
+                    f"Make sure the library is built and installed."
                 )
         else:
             self._lib = ctypes.CDLL(str(lib_path))

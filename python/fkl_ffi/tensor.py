@@ -34,12 +34,60 @@ class Tensor:
     
     def _init_lib(self):
         """Initialize the FKL FFI library."""
-        try:
-            self._lib = tvm_ffi.load_module("_fkl_ffi")
-        except Exception as e:
-            raise RuntimeError(
-                f"Failed to load FKL FFI library. Error: {e}"
-            )
+        import ctypes
+        import os
+        from pathlib import Path
+        
+        # The library should be in the same directory as this Python file
+        # (fkl_ffi/_fkl_ffi.so in site-packages)
+        lib_name = "_fkl_ffi"
+        if os.name == 'nt':  # Windows
+            lib_name = f"{lib_name}.dll"
+        elif os.name == 'posix':  # Linux/macOS
+            lib_name = f"{lib_name}.so" if os.uname().sysname != 'Darwin' else f"{lib_name}.dylib"
+        
+        # Try multiple paths in order of preference
+        possible_paths = [
+            Path(__file__).parent / lib_name,  # Same directory as Python package (installed location)
+            Path(__file__).parent.parent / "build" / "python" / lib_name,  # Build directory (development)
+            Path(__file__).parent.parent / lib_name,  # Parent directory
+            Path.cwd() / lib_name,  # Current working directory
+        ]
+        
+        lib_path = None
+        for path in possible_paths:
+            if path.exists():
+                lib_path = path
+                break
+        
+        if lib_path is None:
+            # Try system library path (e.g., LD_LIBRARY_PATH)
+            try:
+                self._lib = ctypes.CDLL(lib_name)
+            except OSError:
+                raise RuntimeError(
+                    f"Failed to find FKL FFI library '{lib_name}'. "
+                    f"Tried paths: {[str(p) for p in possible_paths]}. "
+                    f"Make sure the library is built and installed."
+                )
+        else:
+            self._lib = ctypes.CDLL(str(lib_path))
+        
+        # Set up function signatures
+        self._lib.FKLTensorCreate.argtypes = [
+            ctypes.POINTER(ctypes.c_void_p),  # DLTensor*
+            ctypes.POINTER(ctypes.c_void_p)   # FKLTensorHandle*
+        ]
+        self._lib.FKLTensorCreate.restype = ctypes.c_int
+        
+        self._lib.FKLTensorDestroy.argtypes = [ctypes.c_void_p]
+        self._lib.FKLTensorDestroy.restype = ctypes.c_int
+        
+        self._lib.FKLTensorGetDLTensor.argtypes = [
+            ctypes.c_void_p,  # FKLTensorHandle
+            ctypes.POINTER(ctypes.POINTER(ctypes.c_void_p))  # DLTensor**
+        ]
+        self._lib.FKLTensorGetDLTensor.restype = ctypes.c_int
     
     def _create_tensor(self):
         """Create the internal tensor handle."""
