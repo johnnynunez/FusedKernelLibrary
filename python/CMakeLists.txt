@@ -15,22 +15,31 @@ endif()
 
 # Method 2: Try to find via Python package (for headers and libraries)
 if(NOT TVM_FFI_FOUND)
-    # Try to use the Python from the build environment
-    # scikit-build-core should have found Python3 and set Python3_EXECUTABLE
-    # For uv environments, we need to use the Python from the virtual environment
-    find_package(Python3 COMPONENTS Interpreter QUIET)
-    if(Python3_FOUND AND Python3_EXECUTABLE)
-        set(PYTHON_EXECUTABLE ${Python3_EXECUTABLE})
-        message(STATUS "Using Python from find_package: ${PYTHON_EXECUTABLE}")
-    elseif(DEFINED Python3_EXECUTABLE)
-        set(PYTHON_EXECUTABLE ${Python3_EXECUTABLE})
-        message(STATUS "Using Python3_EXECUTABLE: ${PYTHON_EXECUTABLE}")
+    # For uv environments, we MUST use the Python from the virtual environment
+    # where apache-tvm-ffi is installed, not the build environment Python
+    # Priority order:
+    # 1. Check for uv virtual environment Python (fused/bin/python3)
+    # 2. Use Python3_EXECUTABLE from find_package if available
+    # 3. Fallback to system Python
+    
+    # First, try to find uv virtual environment Python
+    if(EXISTS "${CMAKE_SOURCE_DIR}/fused/bin/python3")
+        set(PYTHON_EXECUTABLE "${CMAKE_SOURCE_DIR}/fused/bin/python3")
+        message(STATUS "Using Python from uv environment: ${PYTHON_EXECUTABLE}")
+    elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../fused/bin/python3")
+        set(PYTHON_EXECUTABLE "${CMAKE_CURRENT_SOURCE_DIR}/../fused/bin/python3")
+        message(STATUS "Using Python from uv environment: ${PYTHON_EXECUTABLE}")
     else()
-        # Fallback: try to find Python in common locations
-        # For uv, the virtual environment Python is usually in the project directory
-        if(EXISTS "${CMAKE_SOURCE_DIR}/fused/bin/python3")
-            set(PYTHON_EXECUTABLE "${CMAKE_SOURCE_DIR}/fused/bin/python3")
-            message(STATUS "Using Python from uv environment: ${PYTHON_EXECUTABLE}")
+        # Fallback to find_package Python3 (but this might be the build environment)
+        find_package(Python3 COMPONENTS Interpreter QUIET)
+        if(Python3_FOUND AND Python3_EXECUTABLE)
+            set(PYTHON_EXECUTABLE ${Python3_EXECUTABLE})
+            message(STATUS "Using Python from find_package: ${PYTHON_EXECUTABLE}")
+            message(WARNING "This might be the build environment Python. TVM-FFI should be in the uv virtual environment.")
+        elseif(DEFINED Python3_EXECUTABLE)
+            set(PYTHON_EXECUTABLE ${Python3_EXECUTABLE})
+            message(STATUS "Using Python3_EXECUTABLE: ${PYTHON_EXECUTABLE}")
+            message(WARNING "This might be the build environment Python. TVM-FFI should be in the uv virtual environment.")
         else()
             find_program(PYTHON_EXECUTABLE python3 python)
             if(PYTHON_EXECUTABLE)
