@@ -49,11 +49,11 @@ dev = [
 ]
 
 [tool.setuptools]
-packages = ["fkl_ffi"]
+packages = {find = {}}
 package-dir = {"" = "python"}
 
 [tool.setuptools.package-data]
-fkl_ffi = ["*.so", "*.dylib", "*.dll"]
+fkl_ffi = ["*.so", "*.dylib", "*.dll", "*.py"]
 
 [tool.scikit-build]
 editable.rebuild = true
