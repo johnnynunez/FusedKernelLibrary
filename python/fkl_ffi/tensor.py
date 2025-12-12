@@ -570,7 +570,7 @@ class Tensor:
     def shape(self) -> Tuple[int, ...]:
         """Get the tensor shape."""
         if self._data is not None:
-        return self._data.shape
+            return self._data.shape
         
         if self._handle is None:
             raise RuntimeError("Tensor is not initialized")
@@ -591,7 +591,7 @@ class Tensor:
     def dtype(self) -> np.dtype:
         """Get the tensor data type."""
         if self._data is not None:
-        return self._data.dtype
+            return self._data.dtype
         
         if self._handle is None:
             raise RuntimeError("Tensor is not initialized")
