@@ -152,9 +152,9 @@ def _extract_dltensor_from_capsule(capsule) -> Optional[DLTensor]:
         # Return a copy of the DLTensor (we'll need to copy the shape/strides arrays)
         return managed_tensor.dl_tensor
         
-        except Exception:
-            # If extraction fails, return None
-            return None
+    except Exception:
+        # If extraction fails, return None
+        return None
 
 class Tensor:
     """
