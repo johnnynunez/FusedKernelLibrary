@@ -72,11 +72,11 @@ int FKLTensorGetDLTensor(FKLTensorHandle tensor, DLTensor** out) {
 // Function to execute FKL operations
 // This is the key function - exposes FKL's executeOperations
 // FKL operations already have build() (host) and exec() (device) compiled
+// In a real implementation, we would need to pass the operations
+// This is complex because they are variadic templates in C++
+// For now, this is a placeholder showing the idea
 int FKLExecuteOperations(
-    FKLStreamHandle stream,
-    // In a real implementation, we would need to pass the operations
-    // This is complex because they are variadic templates in C++
-    // For now, this is a placeholder showing the idea
+    FKLStreamHandle stream
 ) {
     if (stream == nullptr) {
         return -1;

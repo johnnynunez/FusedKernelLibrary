@@ -15,24 +15,11 @@
 #include "fkl_ffi/fkl_ffi_api.h"
 #include "fkl_stream.h"
 #include <tvm/ffi/c_api.h>
-#include <tvm/ffi/function.h>
-#include <tvm/ffi/module.h>
-#include <tvm/ffi/error.h>
-#include <tvm/ffi/container/tensor.h>
 #include <memory>
 #include <stdexcept>
 
-using namespace tvm::ffi;
-
-// Helper to convert FKLStreamHandle to TVM object
-static ObjectPtr<Object> StreamToObject(FKLStreamHandle stream) {
-    // Store stream handle in an opaque object
-    return ObjectPtr<Object>(reinterpret_cast<Object*>(stream));
-}
-
-static FKLStreamHandle ObjectToStream(ObjectPtr<Object> obj) {
-    return reinterpret_cast<FKLStreamHandle>(obj.get());
-}
+// Note: TVM-FFI C++ headers (function.h, module.h, etc.) are not currently used
+// and may not be available in all TVM-FFI installations. Using only the C API.
 
 // Register global functions for TVM-FFI using stable C ABI
 int FKLFFIRegisterGlobalFunctions() {
