@@ -5,16 +5,49 @@
 option(BUILD_PYTHON_BINDINGS "Build Python bindings using TVM-FFI" ON)
 option(ENABLE_JIT "Enable JIT compilation support" ON)
 
-# Find TVM-FFI via pkg-config (safe: no hyphens in CMake identifiers)
-find_package(PkgConfig QUIET)
-if(PkgConfig_FOUND)
-    pkg_check_modules(TVM_FFI QUIET tvm-ffi)
+# Find TVM-FFI
+# Method 1: Try CMake CONFIG mode (recommended - uses pre-built package)
+find_package(tvm_ffi CONFIG QUIET)
+if(tvm_ffi_FOUND)
+    message(STATUS "Found TVM-FFI via CMake CONFIG (pre-built package)")
+    set(TVM_FFI_FOUND TRUE)
+endif()
+
+# Method 2: Try to build from source if CONFIG mode fails
+if(NOT TVM_FFI_FOUND)
+    find_program(PYTHON_EXECUTABLE python3 python)
+    if(PYTHON_EXECUTABLE)
+        execute_process(
+            COMMAND ${PYTHON_EXECUTABLE} -m tvm_ffi.config --sourcedir
+            OUTPUT_VARIABLE TVM_FFI_SOURCE_DIR
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            ERROR_QUIET
+        )
+        if(TVM_FFI_SOURCE_DIR AND EXISTS ${TVM_FFI_SOURCE_DIR})
+            message(STATUS "Found TVM-FFI source at ${TVM_FFI_SOURCE_DIR}, building from source")
+            add_subdirectory(${TVM_FFI_SOURCE_DIR} tvm_ffi)
+            set(TVM_FFI_FOUND TRUE)
+        endif()
+    endif()
+endif()
+
+# Method 3: Fallback to pkg-config
+if(NOT TVM_FFI_FOUND)
+    find_package(PkgConfig QUIET)
+    if(PkgConfig_FOUND)
+        pkg_check_modules(TVM_FFI QUIET tvm-ffi)
+        if(TVM_FFI_FOUND)
+            message(STATUS "Found TVM-FFI via pkg-config")
+        endif()
+    endif()
 endif()
 
 if(BUILD_PYTHON_BINDINGS AND NOT TVM_FFI_FOUND)
     message(WARNING "TVM-FFI not found. Python bindings will not be built.")
     message(STATUS "Install TVM-FFI: pip install apache-tvm-ffi")
-    set(BUILD_PYTHON_BINDINGS OFF)
+    message(STATUS "Note: TVM-FFI may still work at runtime if installed as a Python package")
+    # Don't disable BUILD_PYTHON_BINDINGS - TVM-FFI might be available at runtime
+    # set(BUILD_PYTHON_BINDINGS OFF)
 endif()
 
 if(BUILD_PYTHON_BINDINGS)
@@ -39,38 +72,28 @@ if(BUILD_PYTHON_BINDINGS)
             FKL::FKL
     )
 
-    # Link TVM-FFI (from pkg-config)
-    if(TVM_FFI_FOUND)
-        target_include_directories(fkl_ffi PUBLIC ${TVM_FFI_INCLUDE_DIRS})
-        target_link_libraries(fkl_ffi PUBLIC ${TVM_FFI_LIBRARIES})
-        target_compile_options(fkl_ffi PUBLIC ${TVM_FFI_CFLAGS_OTHER})
-    else()
-        # Optional fallback: tvm-ffi-config (only if present)
-        find_program(TVM_FFI_CONFIG tvm-ffi-config)
-        if(TVM_FFI_CONFIG)
-            execute_process(
-                COMMAND ${TVM_FFI_CONFIG} --cflags
-                OUTPUT_VARIABLE TVM_FFI_CFLAGS
-                OUTPUT_STRIP_TRAILING_WHITESPACE
-            )
-            execute_process(
-                COMMAND ${TVM_FFI_CONFIG} --ldflags
-                OUTPUT_VARIABLE TVM_FFI_LDFLAGS
-                OUTPUT_STRIP_TRAILING_WHITESPACE
-            )
-            execute_process(
-                COMMAND ${TVM_FFI_CONFIG} --libs
-                OUTPUT_VARIABLE TVM_FFI_LIBS
-                OUTPUT_STRIP_TRAILING_WHITESPACE
-            )
-            separate_arguments(TVM_FFI_CFLAGS)
-            separate_arguments(TVM_FFI_LDFLAGS)
-            separate_arguments(TVM_FFI_LIBS)
-
-            target_compile_options(fkl_ffi PUBLIC ${TVM_FFI_CFLAGS})
-            target_link_options(fkl_ffi PUBLIC ${TVM_FFI_LDFLAGS})
-            target_link_libraries(fkl_ffi PUBLIC ${TVM_FFI_LIBS})
+    # Link TVM-FFI
+    if(tvm_ffi_FOUND)
+        # Found via CMake CONFIG mode (pre-built package)
+        target_link_libraries(fkl_ffi PUBLIC tvm_ffi_shared)
+        message(STATUS "Linking against tvm_ffi_shared (pre-built)")
+    elseif(TVM_FFI_FOUND)
+        # Found via source build or pkg-config
+        if(TARGET tvm_ffi_shared)
+            # Built from source
+            target_link_libraries(fkl_ffi PUBLIC tvm_ffi_shared)
+            message(STATUS "Linking against tvm_ffi_shared (from source)")
+        elseif(TVM_FFI_LIBRARIES)
+            # Found via pkg-config
+            target_include_directories(fkl_ffi PUBLIC ${TVM_FFI_INCLUDE_DIRS})
+            target_link_libraries(fkl_ffi PUBLIC ${TVM_FFI_LIBRARIES})
+            target_compile_options(fkl_ffi PUBLIC ${TVM_FFI_CFLAGS_OTHER})
+            message(STATUS "Linking against TVM-FFI (via pkg-config)")
         endif()
+    else()
+        # TVM-FFI not found at build time, but might be available at runtime
+        # The Python bindings will try to load it dynamically
+        message(STATUS "TVM-FFI not found at build time - will be loaded at runtime")
     endif()
 
     # CUDA support
