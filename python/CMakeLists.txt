@@ -13,10 +13,21 @@ if(tvm_ffi_FOUND)
     set(TVM_FFI_FOUND TRUE)
 endif()
 
-# Method 2: Try to build from source if CONFIG mode fails
+# Method 2: Try to find via Python package (for headers and libraries)
 if(NOT TVM_FFI_FOUND)
-    find_program(PYTHON_EXECUTABLE python3 python)
+    # Try to use the Python from the build environment
+    # scikit-build-core should have found Python3
+    find_package(Python3 COMPONENTS Interpreter QUIET)
+    if(Python3_FOUND AND Python3_EXECUTABLE)
+        set(PYTHON_EXECUTABLE ${Python3_EXECUTABLE})
+    elseif(DEFINED Python3_EXECUTABLE)
+        set(PYTHON_EXECUTABLE ${Python3_EXECUTABLE})
+    else()
+        find_program(PYTHON_EXECUTABLE python3 python)
+    endif()
+    
     if(PYTHON_EXECUTABLE)
+        # Try to get source directory for building from source
         execute_process(
             COMMAND ${PYTHON_EXECUTABLE} -m tvm_ffi.config --sourcedir
             OUTPUT_VARIABLE TVM_FFI_SOURCE_DIR
@@ -27,6 +38,64 @@ if(NOT TVM_FFI_FOUND)
             message(STATUS "Found TVM-FFI source at ${TVM_FFI_SOURCE_DIR}, building from source")
             add_subdirectory(${TVM_FFI_SOURCE_DIR} tvm_ffi)
             set(TVM_FFI_FOUND TRUE)
+        else()
+            # Try to find installed package location
+            execute_process(
+                COMMAND ${PYTHON_EXECUTABLE} -c "import tvm_ffi; import os; print(os.path.dirname(tvm_ffi.__file__))"
+                OUTPUT_VARIABLE TVM_FFI_PYTHON_DIR
+                OUTPUT_STRIP_TRAILING_WHITESPACE
+                ERROR_QUIET
+            )
+            if(TVM_FFI_PYTHON_DIR)
+                # Look for CMake config files in typical locations
+                find_file(TVM_FFI_CONFIG_FILE
+                    NAMES tvm_ffiConfig.cmake tvm-ffi-config.cmake
+                    PATHS
+                        ${TVM_FFI_PYTHON_DIR}/../share/cmake/tvm_ffi
+                        ${TVM_FFI_PYTHON_DIR}/../../share/cmake/tvm_ffi
+                        ${TVM_FFI_PYTHON_DIR}/../lib/cmake/tvm_ffi
+                        ${TVM_FFI_PYTHON_DIR}/../../lib/cmake/tvm_ffi
+                    NO_DEFAULT_PATH
+                )
+                if(TVM_FFI_CONFIG_FILE)
+                    get_filename_component(TVM_FFI_ROOT ${TVM_FFI_CONFIG_FILE} DIRECTORY)
+                    get_filename_component(TVM_FFI_ROOT ${TVM_FFI_ROOT} DIRECTORY)
+                    set(tvm_ffi_DIR ${TVM_FFI_ROOT}/lib/cmake/tvm_ffi)
+                    find_package(tvm_ffi CONFIG QUIET)
+                    if(tvm_ffi_FOUND)
+                        message(STATUS "Found TVM-FFI via Python package at ${TVM_FFI_PYTHON_DIR}")
+                        set(TVM_FFI_FOUND TRUE)
+                    endif()
+                else()
+                    # Try to find headers and libraries directly
+                    find_path(TVM_FFI_INCLUDE_DIR
+                        NAMES tvm/ffi/c_api.h
+                        PATHS
+                            ${TVM_FFI_PYTHON_DIR}/../include
+                            ${TVM_FFI_PYTHON_DIR}/../../include
+                            ${TVM_FFI_PYTHON_DIR}/include
+                        NO_DEFAULT_PATH
+                    )
+                    find_library(TVM_FFI_LIBRARY
+                        NAMES tvm_ffi_shared tvm_ffi
+                        PATHS
+                            ${TVM_FFI_PYTHON_DIR}
+                            ${TVM_FFI_PYTHON_DIR}/../lib
+                            ${TVM_FFI_PYTHON_DIR}/../../lib
+                        NO_DEFAULT_PATH
+                    )
+                    if(TVM_FFI_INCLUDE_DIR OR TVM_FFI_LIBRARY)
+                        set(TVM_FFI_FOUND TRUE)
+                        if(TVM_FFI_INCLUDE_DIR)
+                            set(TVM_FFI_INCLUDE_DIRS ${TVM_FFI_INCLUDE_DIR})
+                        endif()
+                        if(TVM_FFI_LIBRARY)
+                            set(TVM_FFI_LIBRARIES ${TVM_FFI_LIBRARY})
+                        endif()
+                        message(STATUS "Found TVM-FFI headers/libs via Python package at ${TVM_FFI_PYTHON_DIR}")
+                    endif()
+                endif()
+            endif()
         endif()
     endif()
 endif()
@@ -45,9 +114,8 @@ endif()
 if(BUILD_PYTHON_BINDINGS AND NOT TVM_FFI_FOUND)
     message(WARNING "TVM-FFI not found. Python bindings will not be built.")
     message(STATUS "Install TVM-FFI: pip install apache-tvm-ffi")
-    message(STATUS "Note: TVM-FFI may still work at runtime if installed as a Python package")
-    # Don't disable BUILD_PYTHON_BINDINGS - TVM-FFI might be available at runtime
-    # set(BUILD_PYTHON_BINDINGS OFF)
+    message(STATUS "Note: Make sure apache-tvm-ffi is installed in the same Python environment")
+    set(BUILD_PYTHON_BINDINGS OFF)
 endif()
 
 if(BUILD_PYTHON_BINDINGS)
