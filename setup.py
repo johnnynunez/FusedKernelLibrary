@@ -32,7 +32,7 @@ setup(
     python_requires=">=3.8",
     install_requires=[
         "numpy>=1.20.0",
-        "tvm-ffi>=0.1.0",
+        "apache-tvm-ffi>=0.1.5",
         "dlpack>=0.1.0",
     ],
     cmake_install_dir="python/fkl_ffi",
