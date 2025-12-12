@@ -2,6 +2,9 @@
 # Note: This is included as a subdirectory, so cmake_minimum_required is not needed
 # Note: scikit-build-core handles Python integration, so we don't need to find Python here
 
+# Include GNUInstallDirs to get CMAKE_INSTALL_INCLUDEDIR, CMAKE_INSTALL_LIBDIR, etc.
+include(GNUInstallDirs)
+
 option(BUILD_PYTHON_BINDINGS "Build Python bindings using TVM-FFI" ON)
 option(ENABLE_JIT "Enable JIT compilation support" ON)
 
@@ -231,15 +234,24 @@ if(BUILD_PYTHON_BINDINGS)
         PREFIX ""
     )
 
-    # Install the library
-    install(TARGETS fkl_ffi
-        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-    )
+    # Install the library to the Python package directory
+    # scikit-build-core sets SKBUILD_PLATLIB_DIR to site-packages
+    # We want to install to fkl_ffi/ within site-packages
+    if(DEFINED SKBUILD_PLATLIB_DIR)
+        # scikit-build-core provides this - install to package directory
+        install(TARGETS fkl_ffi
+            LIBRARY DESTINATION fkl_ffi
+            RUNTIME DESTINATION fkl_ffi
+        )
+    else()
+        # Fallback for direct CMake builds (not via scikit-build-core)
+        install(TARGETS fkl_ffi
+            LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+        )
+    endif()
 
-    # Install headers
-    install(DIRECTORY include/
-        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/fkl_ffi
-        FILES_MATCHING PATTERN "*.h"
-    )
+    # Headers are typically not needed for Python packages at install time
+    # They're only needed during build. If headers are needed for C++ extensions
+    # that link against this library, they can be included in package data.
 endif()
