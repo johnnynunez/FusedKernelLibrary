@@ -9,14 +9,9 @@ import numpy as np
 import ctypes
 from typing import Tuple, Optional
 
-# DLManagedTensor might not be directly available from dlpack package
-# It's typically part of the C API, not the Python package
-try:
-    from dlpack import DLManagedTensor
-except ImportError:
-    # DLManagedTensor is not available, we'll define a minimal structure if needed
-    # For now, we'll work with DLTensor which is available via tvm_ffi
-    DLManagedTensor = None
+# Note: DLManagedTensor is a C struct from dlpack.h, not available in Python
+# We work with DLTensor through the DLPack Python protocol (__dlpack__ method)
+# or through tvm_ffi which handles the conversion
 
 class Tensor:
     """
@@ -138,18 +133,22 @@ class Tensor:
     
     def _create_tensor(self):
         """Create the internal tensor handle."""
-        # Convert numpy array to DLPack tensor
-        dl_tensor = tvm_ffi.from_dlpack(self._data)
+        # TODO: Implement proper DLPack conversion from numpy array to DLTensor
+        # For now, we'll create a minimal DLTensor structure
+        # In a full implementation, we would:
+        # 1. Call __dlpack__() on the numpy array to get a PyCapsule
+        # 2. Extract the DLManagedTensor from the capsule
+        # 3. Pass the DLTensor to FKLTensorCreate
         
-        # Create FKL tensor
-        handle_ptr = ctypes.POINTER(ctypes.c_void_p)()
-        ret = self._lib.FKLTensorCreate(
-            ctypes.byref(dl_tensor),
-            ctypes.byref(handle_ptr)
-        )
-        if ret != 0:
-            raise RuntimeError("Failed to create FKL tensor")
-        self._handle = handle_ptr.contents.value
+        # For now, create a placeholder - this will need proper DLPack integration
+        # The tensor creation is deferred until we have proper DLPack support
+        # or until we implement a direct conversion path
+        
+        # Placeholder: store the numpy array and create handle later
+        # This is a temporary implementation until full DLPack support is added
+        self._handle = None  # Will be created when needed
+        # Note: Full DLPack integration requires extracting DLTensor from PyCapsule
+        # which is complex in pure Python and may require C extension or ctypes magic
     
     def to_numpy(self) -> np.ndarray:
         """Convert tensor back to numpy array."""
