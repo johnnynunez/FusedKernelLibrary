@@ -122,7 +122,7 @@ def _extract_dltensor_from_capsule(capsule) -> Optional[DLTensor]:
     try:
         # Get the pointer from the capsule
         # The capsule name should be "dltensor" or "dltensor_versioned"
-        import ctypes.pythonapi as pyapi
+        pyapi = ctypes.pythonapi
         
         # Check if it's a valid capsule
         if not hasattr(capsule, '__class__') or 'capsule' not in str(type(capsule)).lower():
@@ -489,8 +489,8 @@ class Tensor:
         
         managed_tensor.deleter = DLPACK_DELETER(deleter)
         
-        # Create capsule
-        import ctypes.pythonapi as pyapi
+        # Create capsule using ctypes.pythonapi
+        pyapi = ctypes.pythonapi
         PyCapsule_New = pyapi.PyCapsule_New
         PyCapsule_New.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_void_p]
         PyCapsule_New.restype = ctypes.py_object
@@ -570,7 +570,7 @@ class Tensor:
     def shape(self) -> Tuple[int, ...]:
         """Get the tensor shape."""
         if self._data is not None:
-            return self._data.shape
+        return self._data.shape
         
         if self._handle is None:
             raise RuntimeError("Tensor is not initialized")
@@ -591,7 +591,7 @@ class Tensor:
     def dtype(self) -> np.dtype:
         """Get the tensor data type."""
         if self._data is not None:
-            return self._data.dtype
+        return self._data.dtype
         
         if self._handle is None:
             raise RuntimeError("Tensor is not initialized")
