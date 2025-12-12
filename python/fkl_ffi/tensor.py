@@ -451,13 +451,41 @@ class Tensor:
         # We need to keep a reference to prevent deletion
         managed_tensor = DLManagedTensor()
         managed_tensor.dl_tensor = dltensor
-        managed_tensor.manager_ctx = ctypes.cast(ctypes.py_object(self), ctypes.c_void_p)
+        
+        # Keep a reference to self to prevent garbage collection
+        # Store it in a class-level dict keyed by id
+        if not hasattr(Tensor, '_dlpack_refs'):
+            Tensor._dlpack_refs = {}
+        if not hasattr(Tensor, '_dlpack_buffers'):
+            Tensor._dlpack_buffers = {}
+        obj_id = id(self)
+        Tensor._dlpack_refs[obj_id] = self
+        
+        # Allocate a small buffer to store the object ID
+        # This gives us a valid pointer to store in manager_ctx
+        # We need to keep this buffer alive
+        # Use c_size_t to store the integer ID (size_t is pointer-sized)
+        id_buffer = (ctypes.c_size_t * 1)(obj_id)
+        Tensor._dlpack_buffers[obj_id] = id_buffer  # Keep buffer alive
+        managed_tensor.manager_ctx = ctypes.cast(ctypes.addressof(id_buffer), ctypes.c_void_p)
         
         # Define deleter function
-        def deleter(_managed_ptr):
-            # The tensor will be cleaned up when Python object is deleted
-            # We don't need to do anything here as Python's GC will handle it
-            pass
+        def deleter(managed_ptr):
+            # Remove from refs dict when capsule is deleted
+            if hasattr(Tensor, '_dlpack_refs') and hasattr(Tensor, '_dlpack_buffers'):
+                try:
+                    managed = ctypes.cast(managed_ptr, ctypes.POINTER(DLManagedTensor)).contents
+                    if managed.manager_ctx:
+                        # Read the object ID from the buffer
+                        id_ptr = ctypes.cast(managed.manager_ctx, ctypes.POINTER(ctypes.c_size_t))
+                        obj_id_val = id_ptr.contents.value
+                        if obj_id_val:
+                            if obj_id_val in Tensor._dlpack_refs:
+                                del Tensor._dlpack_refs[obj_id_val]
+                            if obj_id_val in Tensor._dlpack_buffers:
+                                del Tensor._dlpack_buffers[obj_id_val]
+                except Exception:
+                    pass  # Ignore errors during cleanup
         
         managed_tensor.deleter = DLPACK_DELETER(deleter)
         
@@ -467,14 +495,20 @@ class Tensor:
         PyCapsule_New.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_void_p]
         PyCapsule_New.restype = ctypes.py_object
         
+        # Allocate memory for the managed tensor (it needs to stay alive)
+        # We'll keep it in a list to prevent GC
+        if not hasattr(Tensor, '_dlpack_managed_tensors'):
+            Tensor._dlpack_managed_tensors = []
+        
+        # Allocate memory for DLManagedTensor
+        managed_tensor_ptr = ctypes.pointer(managed_tensor)
+        Tensor._dlpack_managed_tensors.append(managed_tensor_ptr)
+        
         capsule = PyCapsule_New(
-            ctypes.addressof(managed_tensor),
+            ctypes.addressof(managed_tensor_ptr.contents),
             b"dltensor",
             None
         )
-        
-        # Increment reference to self to keep it alive
-        ctypes.pythonapi.Py_INCREF(ctypes.py_object(self))
         
         return capsule
     
