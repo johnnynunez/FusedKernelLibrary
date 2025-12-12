@@ -47,12 +47,51 @@ class Tensor:
             lib_name = f"{lib_name}.so" if os.uname().sysname != 'Darwin' else f"{lib_name}.dylib"
         
         # Try multiple paths in order of preference
-        possible_paths = [
-            Path(__file__).parent / lib_name,  # Same directory as Python package (installed location)
-            Path(__file__).parent.parent / "build" / "python" / lib_name,  # Build directory (development)
-            Path(__file__).parent.parent / lib_name,  # Parent directory
-            Path.cwd() / lib_name,  # Current working directory
-        ]
+        possible_paths = []
+        
+        # First, try to find package directory
+        package_dir = None
+        if __file__:
+            package_dir = Path(__file__).parent
+        else:
+            # Try to find package directory using importlib
+            try:
+                import importlib.util
+                spec = importlib.util.find_spec("fkl_ffi")
+                if spec and spec.origin and spec.origin != "namespace":
+                    package_dir = Path(spec.origin).parent
+                elif spec and spec.submodule_search_locations:
+                    for loc in spec.submodule_search_locations:
+                        if Path(loc).exists():
+                            package_dir = Path(loc)
+                            break
+            except:
+                pass
+        
+        # Check build directory (where scikit-build-core puts it during development)
+        # Project root is likely in sys.path for editable installs
+        import sys
+        for path_str in sys.path:
+            path = Path(path_str)
+            if path.exists() and path.is_absolute():
+                # Check if this looks like project root (has python/ and build/ directories)
+                build_path = path / "build" / "python" / lib_name
+                if build_path.exists():
+                    possible_paths.append(build_path)
+                # Also check python/fkl_ffi/ in project root
+                python_pkg_path = path / "python" / "fkl_ffi" / lib_name
+                if python_pkg_path.exists():
+                    possible_paths.append(python_pkg_path)
+        
+        # Check package directory (for installed packages)
+        if package_dir:
+            possible_paths.append(package_dir / lib_name)
+        
+        # Check current working directory
+        cwd_build = Path.cwd() / "build" / "python" / lib_name
+        if cwd_build.exists():
+            possible_paths.append(cwd_build)
+        possible_paths.append(Path.cwd() / lib_name)
         
         lib_path = None
         for path in possible_paths:
