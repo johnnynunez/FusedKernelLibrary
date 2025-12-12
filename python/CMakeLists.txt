@@ -1,8 +1,6 @@
 # Python bindings and TVM-FFI integration for FusedKernelLibrary
 # Note: This is included as a subdirectory, so cmake_minimum_required is not needed
-
-# Find Python
-find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
+# Note: scikit-build-core handles Python integration, so we don't need to find Python here
 
 option(BUILD_PYTHON_BINDINGS "Build Python bindings using TVM-FFI" ON)
 option(ENABLE_JIT "Enable JIT compilation support" ON)
