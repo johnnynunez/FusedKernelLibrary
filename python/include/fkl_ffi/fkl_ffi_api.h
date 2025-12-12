@@ -27,16 +27,16 @@ typedef struct FKLStream* FKLStreamHandle;
 typedef struct FKLTensor* FKLTensorHandle;
 
 // Stream operations
-TVM_DLL int FKLStreamCreate(FKLStreamHandle* out);
-TVM_DLL int FKLStreamDestroy(FKLStreamHandle stream);
-TVM_DLL int FKLStreamSync(FKLStreamHandle stream);
-TVM_DLL int FKLStreamFromCUDAStream(FKLStreamHandle* out, void* cuda_stream);
-TVM_DLL int FKLStreamFromHIPStream(FKLStreamHandle* out, void* hip_stream);
+TVM_FFI_DLL int FKLStreamCreate(FKLStreamHandle* out);
+TVM_FFI_DLL int FKLStreamDestroy(FKLStreamHandle stream);
+TVM_FFI_DLL int FKLStreamSync(FKLStreamHandle stream);
+TVM_FFI_DLL int FKLStreamFromCUDAStream(FKLStreamHandle* out, void* cuda_stream);
+TVM_FFI_DLL int FKLStreamFromHIPStream(FKLStreamHandle* out, void* hip_stream);
 
 // Tensor operations
-TVM_DLL int FKLTensorCreate(DLTensor* tensor, FKLTensorHandle* out);
-TVM_DLL int FKLTensorDestroy(FKLTensorHandle tensor);
-TVM_DLL int FKLTensorGetDLTensor(FKLTensorHandle tensor, DLTensor** out);
+TVM_FFI_DLL int FKLTensorCreate(DLTensor* tensor, FKLTensorHandle* out);
+TVM_FFI_DLL int FKLTensorDestroy(FKLTensorHandle tensor);
+TVM_FFI_DLL int FKLTensorGetDLTensor(FKLTensorHandle tensor, DLTensor** out);
 
 // Execute operations using FKL's existing system
 // This uses the build() functions (HOST) and exec() functions (DEVICE) 
@@ -45,7 +45,7 @@ TVM_DLL int FKLTensorGetDLTensor(FKLTensorHandle tensor, DLTensor** out);
 // Note: This is a placeholder - full implementation would need to handle
 // variadic template operations from Python, which is complex.
 // The real solution is to use FKL's executeOperations directly.
-TVM_DLL int FKLExecuteOperations(
+TVM_FFI_DLL int FKLExecuteOperations(
     FKLStreamHandle stream
     // In real implementation: variadic operations
     // This is complex because executeOperations is a template variadic function
@@ -54,21 +54,21 @@ TVM_DLL int FKLExecuteOperations(
 // JIT compilation (if enabled) - ONLY if you really need dynamic code generation
 // Otherwise, use FKLExecuteOperations which uses the existing compiled system
 #ifdef FKL_ENABLE_JIT
-TVM_DLL int FKLJITCompileKernel(
+TVM_FFI_DLL int FKLJITCompileKernel(
     const char* kernel_code,
     const char* kernel_name,
     const char* options,
     void** cubin_out,
     size_t* cubin_size_out
 );
-TVM_DLL int FKLJITLoadModule(
+TVM_FFI_DLL int FKLJITLoadModule(
     const char* module_path,
     TVMFFIObjectHandle* module_out
 );
 #endif
 
 // Register global functions for TVM-FFI
-TVM_DLL int FKLFFIRegisterGlobalFunctions();
+TVM_FFI_DLL int FKLFFIRegisterGlobalFunctions();
 
 #ifdef __cplusplus
 }
