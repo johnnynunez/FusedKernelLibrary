@@ -50,12 +50,15 @@ packages = ["fkl_ffi"]
 fkl_ffi = ["*.so", "*.dylib", "*.dll"]
 
 [tool.scikit-build]
-cmake.version = "3.22"
 cmake.args = [
-    "-DBUILD_PYTHON_BINDINGS=ON",
-    "-DENABLE_JIT=ON",
+  "-DBUILD_PYTHON_BINDINGS=ON",
+  "-DENABLE_JIT=ON",
 ]
 editable.rebuild = true
+build-dir = "build"
+
+[tool.scikit-build.cmake]
+version = ">=3.22"
 
 [tool.scikit-build.cmake.define]
 BUILD_PYTHON_BINDINGS = "ON"
