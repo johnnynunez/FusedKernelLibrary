@@ -16,37 +16,55 @@ endif()
 # Method 2: Try to find via Python package (for headers and libraries)
 if(NOT TVM_FFI_FOUND)
     # Try to use the Python from the build environment
-    # scikit-build-core should have found Python3
+    # scikit-build-core should have found Python3 and set Python3_EXECUTABLE
+    # For uv environments, we need to use the Python from the virtual environment
     find_package(Python3 COMPONENTS Interpreter QUIET)
     if(Python3_FOUND AND Python3_EXECUTABLE)
         set(PYTHON_EXECUTABLE ${Python3_EXECUTABLE})
+        message(STATUS "Using Python from find_package: ${PYTHON_EXECUTABLE}")
     elseif(DEFINED Python3_EXECUTABLE)
         set(PYTHON_EXECUTABLE ${Python3_EXECUTABLE})
+        message(STATUS "Using Python3_EXECUTABLE: ${PYTHON_EXECUTABLE}")
     else()
-        find_program(PYTHON_EXECUTABLE python3 python)
+        # Fallback: try to find Python in common locations
+        # For uv, the virtual environment Python is usually in the project directory
+        if(EXISTS "${CMAKE_SOURCE_DIR}/fused/bin/python3")
+            set(PYTHON_EXECUTABLE "${CMAKE_SOURCE_DIR}/fused/bin/python3")
+            message(STATUS "Using Python from uv environment: ${PYTHON_EXECUTABLE}")
+        else()
+            find_program(PYTHON_EXECUTABLE python3 python)
+            if(PYTHON_EXECUTABLE)
+                message(STATUS "Using system Python: ${PYTHON_EXECUTABLE}")
+            endif()
+        endif()
     endif()
     
     if(PYTHON_EXECUTABLE)
-        # Try to get source directory for building from source
+        # Method 2a: Try to get source directory for building from source (recommended)
+        # This is the most reliable method when apache-tvm-ffi is installed
         execute_process(
             COMMAND ${PYTHON_EXECUTABLE} -m tvm_ffi.config --sourcedir
             OUTPUT_VARIABLE TVM_FFI_SOURCE_DIR
             OUTPUT_STRIP_TRAILING_WHITESPACE
             ERROR_QUIET
+            RESULT_VARIABLE TVM_FFI_CONFIG_RESULT
         )
         if(TVM_FFI_SOURCE_DIR AND EXISTS ${TVM_FFI_SOURCE_DIR})
             message(STATUS "Found TVM-FFI source at ${TVM_FFI_SOURCE_DIR}, building from source")
             add_subdirectory(${TVM_FFI_SOURCE_DIR} tvm_ffi)
             set(TVM_FFI_FOUND TRUE)
         else()
+            # Method 2b: Try to find installed package location and look for headers/libs
             # Try to find installed package location
             execute_process(
                 COMMAND ${PYTHON_EXECUTABLE} -c "import tvm_ffi; import os; print(os.path.dirname(tvm_ffi.__file__))"
                 OUTPUT_VARIABLE TVM_FFI_PYTHON_DIR
                 OUTPUT_STRIP_TRAILING_WHITESPACE
                 ERROR_QUIET
+                RESULT_VARIABLE TVM_FFI_IMPORT_RESULT
             )
             if(TVM_FFI_PYTHON_DIR)
+                message(STATUS "TVM-FFI Python package found at: ${TVM_FFI_PYTHON_DIR}")
                 # Look for CMake config files in typical locations
                 find_file(TVM_FFI_CONFIG_FILE
                     NAMES tvm_ffiConfig.cmake tvm-ffi-config.cmake
@@ -63,7 +81,7 @@ if(NOT TVM_FFI_FOUND)
                     set(tvm_ffi_DIR ${TVM_FFI_ROOT}/lib/cmake/tvm_ffi)
                     find_package(tvm_ffi CONFIG QUIET)
                     if(tvm_ffi_FOUND)
-                        message(STATUS "Found TVM-FFI via Python package at ${TVM_FFI_PYTHON_DIR}")
+                        message(STATUS "Found TVM-FFI via Python package CMake config at ${TVM_FFI_PYTHON_DIR}")
                         set(TVM_FFI_FOUND TRUE)
                     endif()
                 else()
@@ -93,8 +111,12 @@ if(NOT TVM_FFI_FOUND)
                             set(TVM_FFI_LIBRARIES ${TVM_FFI_LIBRARY})
                         endif()
                         message(STATUS "Found TVM-FFI headers/libs via Python package at ${TVM_FFI_PYTHON_DIR}")
+                    else()
+                        message(STATUS "TVM-FFI Python package found but headers/libs not found. Try: python -m tvm_ffi.config --sourcedir")
                     endif()
                 endif()
+            else()
+                message(STATUS "TVM-FFI Python package not found. Make sure apache-tvm-ffi is installed.")
             endif()
         endif()
     endif()
