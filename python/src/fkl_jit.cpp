@@ -18,6 +18,9 @@
 
 // JIT compilation is CUDA-specific (uses nvcc)
 // Skip CUDA-specific code when building for HIP or when CUDA is not available
+
+extern "C" {
+
 #if defined(__HIP__) || defined(__HIPCC__) || defined(FKL_ENABLE_HIP)
 // HIP build - JIT is not supported (JIT uses nvcc which is CUDA-specific)
 // Provide stub implementations that return errors
@@ -229,6 +232,8 @@ int FKLJITLoadModule(
 }
 
 #endif // CUDA compiler check
+
+} // extern "C"
 
 #endif // FKL_ENABLE_JIT
 

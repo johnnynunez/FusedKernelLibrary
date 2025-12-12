@@ -24,6 +24,8 @@
 
 using namespace fk;
 
+extern "C" {
+
 // CORRECT SOLUTION: Use FKL's executeOperations directly
 // We don't need to generate code - FKL already has everything compiled
 
@@ -103,4 +105,6 @@ int FKLExecuteOperations(
         return -1;
     }
 }
+
+} // extern "C"
 

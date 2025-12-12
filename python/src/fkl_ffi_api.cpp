@@ -38,59 +38,6 @@ int FKLFFIRegisterGlobalFunctions() {
 }
 
 // Module initialization - called when library is loaded
-extern "C" {
-    // Export functions for Python ctypes
-    #ifdef _WIN32
-    #define FKL_FFI_EXPORT __declspec(dllexport)
-    #else
-    #define FKL_FFI_EXPORT __attribute__((visibility("default")))
-    #endif
-    
-    FKL_FFI_EXPORT int FKLStreamCreate(FKLStreamHandle* out) {
-        return ::FKLStreamCreate(out);
-    }
-    
-    FKL_FFI_EXPORT int FKLStreamDestroy(FKLStreamHandle stream) {
-        return ::FKLStreamDestroy(stream);
-    }
-    
-    FKL_FFI_EXPORT int FKLStreamSync(FKLStreamHandle stream) {
-        return ::FKLStreamSync(stream);
-    }
-    
-    FKL_FFI_EXPORT int FKLStreamFromCUDAStream(FKLStreamHandle* out, void* cuda_stream) {
-        return ::FKLStreamFromCUDAStream(out, cuda_stream);
-    }
-    
-    FKL_FFI_EXPORT int FKLTensorCreate(DLTensor* tensor, FKLTensorHandle* out) {
-        return ::FKLTensorCreate(tensor, out);
-    }
-    
-    FKL_FFI_EXPORT int FKLTensorDestroy(FKLTensorHandle tensor) {
-        return ::FKLTensorDestroy(tensor);
-    }
-    
-    FKL_FFI_EXPORT int FKLTensorGetDLTensor(FKLTensorHandle tensor, DLTensor** out) {
-        return ::FKLTensorGetDLTensor(tensor, out);
-    }
-    
-    #ifdef FKL_ENABLE_JIT
-    FKL_FFI_EXPORT int FKLJITCompileKernel(
-        const char* kernel_code,
-        const char* kernel_name,
-        const char* options,
-        void** cubin_out,
-        size_t* cubin_size_out
-    ) {
-        return ::FKLJITCompileKernel(kernel_code, kernel_name, options, cubin_out, cubin_size_out);
-    }
-    
-    FKL_FFI_EXPORT int FKLJITLoadModule(
-        const char* module_path,
-        TVMFFIObjectHandle* module_out
-    ) {
-        return ::FKLJITLoadModule(module_path, module_out);
-    }
-    #endif
-}
+// Note: Function implementations are in fkl_stream.cpp, fkl_executor.cpp, and fkl_jit.cpp
+// This file only contains the registration function
 

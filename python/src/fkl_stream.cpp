@@ -23,6 +23,8 @@
 
 using namespace fk;
 
+extern "C" {
+
 struct FKLStream {
     std::shared_ptr<fk::Stream> stream;
     
@@ -116,6 +118,8 @@ int FKLStreamFromHIPStream(FKLStreamHandle* out, void* hip_stream) {
         return -1;
     }
 }
+
+} // extern "C"
 
 // Helper function to get the underlying stream (for internal use)
 Stream* FKLStreamGetStream(FKLStreamHandle handle) {
