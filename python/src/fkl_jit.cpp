@@ -15,7 +15,35 @@
 #ifdef FKL_ENABLE_JIT
 
 #include "fkl_ffi/fkl_ffi_api.h"
+
+// JIT compilation is CUDA-specific (uses nvcc)
+// Skip CUDA-specific code when building for HIP
+#if defined(__HIP__) || defined(__HIPCC__) || defined(FKL_ENABLE_HIP)
+// HIP build - JIT is not supported (JIT uses nvcc which is CUDA-specific)
+// Provide stub implementations that return errors
+int FKLJITCompileKernel(
+    const char* kernel_code,
+    const char* kernel_name,
+    const char* options,
+    void** cubin_out,
+    size_t* cubin_size_out
+) {
+    (void)kernel_code; (void)kernel_name; (void)options;
+    (void)cubin_out; (void)cubin_size_out;
+    return -1; // JIT not supported for HIP
+}
+
+int FKLJITLoadModule(
+    const char* module_path,
+    TVMFFIObjectHandle* module_out
+) {
+    (void)module_path; (void)module_out;
+    return -1; // JIT not supported for HIP
+}
+#else
+// CUDA build - include CUDA headers and provide full implementation
 #include <cuda_runtime.h>
+
 #include <memory>
 #include <vector>
 #include <string>
@@ -175,6 +203,8 @@ int FKLJITLoadModule(
     // For now, placeholder
     return -1;
 }
+
+#endif // !HIP (CUDA implementation)
 
 #endif // FKL_ENABLE_JIT
 

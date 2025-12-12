@@ -14,7 +14,6 @@
 
 #include "fkl_ffi/fkl_ffi_api.h"
 #include "fkl_stream.h"
-#include "fkl_executor.h"
 #include <tvm/ffi/c_api.h>
 #include <tvm/ffi/function.h>
 #include <tvm/ffi/module.h>
