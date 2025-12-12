@@ -34,7 +34,7 @@ Example:
 __version__ = "0.2.0"
 
 from .stream import Stream
-from .tensor import Tensor
+from .tensor import Tensor, from_dlpack
 from .jit import JITCompiler
 from .operations import (
     Operation,
@@ -62,6 +62,7 @@ try:
     __all__ = [
         "Stream",
         "Tensor",
+        "from_dlpack",
         "JITCompiler",
         "Operation",
         "UnaryOperation",
@@ -89,6 +90,7 @@ except ImportError:
     __all__ = [
         "Stream",
         "Tensor",
+        "from_dlpack",
         "JITCompiler",
         "Operation",
         "UnaryOperation",
