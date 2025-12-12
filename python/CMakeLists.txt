@@ -251,6 +251,21 @@ if(BUILD_PYTHON_BINDINGS)
         )
     endif()
 
+    # Install Python source files for the package
+    # scikit-build-core needs these to be installed for editable installs to work properly
+    if(DEFINED SKBUILD_PLATLIB_DIR)
+        # Install Python source files to the package directory
+        install(FILES
+            ${CMAKE_CURRENT_SOURCE_DIR}/fkl_ffi/__init__.py
+            ${CMAKE_CURRENT_SOURCE_DIR}/fkl_ffi/stream.py
+            ${CMAKE_CURRENT_SOURCE_DIR}/fkl_ffi/tensor.py
+            ${CMAKE_CURRENT_SOURCE_DIR}/fkl_ffi/jit.py
+            ${CMAKE_CURRENT_SOURCE_DIR}/fkl_ffi/operations.py
+            ${CMAKE_CURRENT_SOURCE_DIR}/fkl_ffi/pytorch.py
+            DESTINATION fkl_ffi
+        )
+    endif()
+
     # Headers are typically not needed for Python packages at install time
     # They're only needed during build. If headers are needed for C++ extensions
     # that link against this library, they can be included in package data.

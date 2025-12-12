@@ -8,7 +8,15 @@ import tvm_ffi
 import numpy as np
 import ctypes
 from typing import Tuple, Optional
-from dlpack import DLManagedTensor
+
+# DLManagedTensor might not be directly available from dlpack package
+# It's typically part of the C API, not the Python package
+try:
+    from dlpack import DLManagedTensor
+except ImportError:
+    # DLManagedTensor is not available, we'll define a minimal structure if needed
+    # For now, we'll work with DLTensor which is available via tvm_ffi
+    DLManagedTensor = None
 
 class Tensor:
     """
