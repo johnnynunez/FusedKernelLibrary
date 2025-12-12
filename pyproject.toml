@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel", "scikit-build-core>=0.5.0", "cmake>=3.22"]
+requires = ["setuptools>=61.0", "wheel", "scikit-build-core>=0.5.0"]
 build-backend = "scikit_build_core.build"
 
 [project]
@@ -50,7 +50,7 @@ packages = ["fkl_ffi"]
 fkl_ffi = ["*.so", "*.dylib", "*.dll"]
 
 [tool.scikit-build]
-cmake.minimum-version = "3.22"
+cmake.version = "3.22"
 cmake.args = [
     "-DBUILD_PYTHON_BINDINGS=ON",
     "-DENABLE_JIT=ON",

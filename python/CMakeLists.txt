@@ -1,6 +1,5 @@
 # Python bindings and TVM-FFI integration for FusedKernelLibrary
-
-cmake_minimum_required(VERSION 3.22)
+# Note: This is included as a subdirectory, so cmake_minimum_required is not needed
 
 # Find TVM-FFI
 find_package(tvm-ffi QUIET)
@@ -97,15 +96,15 @@ if(BUILD_PYTHON_BINDINGS)
     endif()
     
     # HIP/ROCm support
-    if(ENABLE_HIP)
+    if(DEFINED ENABLE_HIP AND ENABLE_HIP)
         target_compile_options(fkl_ffi PRIVATE $<$<COMPILE_LANGUAGE:HIP>:-fPIC>)
         target_sources(fkl_ffi PRIVATE src/fkl_stream_hip.cpp)
         # Link HIP libraries
-        if(ROCM_HIP_LIBRARY)
+        if(DEFINED ROCM_HIP_LIBRARY AND ROCM_HIP_LIBRARY)
             target_link_libraries(fkl_ffi PRIVATE ${ROCM_HIP_LIBRARY})
         endif()
         # Add HIP include directories
-        if(ROCM_INCLUDE_DIR)
+        if(DEFINED ROCM_INCLUDE_DIR AND ROCM_INCLUDE_DIR)
             target_include_directories(fkl_ffi PRIVATE ${ROCM_INCLUDE_DIR})
         endif()
         target_compile_definitions(fkl_ffi PUBLIC FKL_ENABLE_HIP)
