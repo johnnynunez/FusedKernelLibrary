@@ -50,6 +50,7 @@ dev = [
 
 [tool.setuptools]
 packages = ["fkl_ffi"]
+package-dir = {"" = "python"}
 
 [tool.setuptools.package-data]
 fkl_ffi = ["*.so", "*.dylib", "*.dll"]
