@@ -178,19 +178,24 @@ class Tensor:
         self._init_lib()
         
         # Handle different input types
+        # Check numpy arrays first (they also have __dlpack__, but we want to handle them specially)
         if isinstance(data, Tensor):
             # Copy from another tensor
             self._data = data._data
             self._device = data._device
             self._create_tensor_from_dlpack()
-        elif hasattr(data, '__dlpack__'):
-            # DLPack-compatible object (e.g., PyTorch tensor, CuPy array)
-            self._data = None  # Will be set from DLPack
-            self._create_tensor_from_dlpack_object(data)
         elif isinstance(data, np.ndarray):
-            # NumPy array - use its __dlpack__ method
+            # NumPy array - store reference and try DLPack, fallback to manual conversion
             self._data = data
             self._create_tensor_from_dlpack()
+        elif hasattr(data, '__dlpack__'):
+            # DLPack-compatible object (e.g., PyTorch tensor, CuPy array)
+            # Try to keep numpy reference if it's convertible
+            if isinstance(data, np.ndarray):
+                self._data = data
+            else:
+                self._data = None  # Will try to extract from DLPack
+            self._create_tensor_from_dlpack_object(data)
         else:
             raise TypeError(f"Unsupported data type: {type(data)}")
     
@@ -293,17 +298,19 @@ class Tensor:
         # Get DLPack capsule from numpy array
         try:
             capsule = self._data.__dlpack__()
-        except AttributeError:
-            raise ValueError("Array does not support DLPack protocol")
-        
-        self._create_tensor_from_capsule(capsule)
+            self._create_tensor_from_capsule(capsule)
+        except (AttributeError, Exception):
+            # If DLPack fails, fall back to manual conversion from numpy
+            # This handles cases where DLPack extraction doesn't work
+            dltensor = self._create_dltensor_from_numpy(self._data)
+            self._create_tensor_from_dltensor(dltensor)
     
     def _create_tensor_from_dlpack_object(self, obj):
         """Create tensor from any DLPack-compatible object."""
         try:
             capsule = obj.__dlpack__()
         except AttributeError:
-            raise ValueError("Object does not support DLPack protocol")
+            raise ValueError("Object does not support DLPack protocol") from None
         
         self._create_tensor_from_capsule(capsule)
     
@@ -321,6 +328,39 @@ class Tensor:
             # Store reference to prevent deletion
             self._managed_tensor = capsule
         
+        # Allocate memory for shape and strides if needed
+        if dltensor.ndim > 0:
+            # Create copies of shape and strides arrays
+            shape_array = (ctypes.c_int64 * dltensor.ndim)(*[dltensor.shape[i] for i in range(dltensor.ndim)])
+            strides_array = None
+            if dltensor.strides:
+                strides_array = (ctypes.c_int64 * dltensor.ndim)(*[dltensor.strides[i] for i in range(dltensor.ndim)])
+            
+            # Create a new DLTensor with copied arrays
+            new_dltensor = DLTensor(
+                data=dltensor.data,
+                device=dltensor.device,
+                ndim=dltensor.ndim,
+                dtype=dltensor.dtype,
+                shape=ctypes.cast(shape_array, ctypes.POINTER(ctypes.c_int64)),
+                strides=ctypes.cast(strides_array, ctypes.POINTER(ctypes.c_int64)) if strides_array else None,
+                byte_offset=dltensor.byte_offset
+            )
+        else:
+            new_dltensor = dltensor
+        
+        # Create FKL tensor
+        handle_ptr = ctypes.c_void_p()
+        ret = self._lib.FKLTensorCreate(
+            ctypes.byref(new_dltensor),
+            ctypes.byref(handle_ptr)
+        )
+        if ret != 0:
+            raise RuntimeError("Failed to create FKL tensor")
+        self._handle = handle_ptr.value
+    
+    def _create_tensor_from_dltensor(self, dltensor: DLTensor):
+        """Create FKL tensor directly from a DLTensor structure."""
         # Allocate memory for shape and strides if needed
         if dltensor.ndim > 0:
             # Create copies of shape and strides arrays
