@@ -146,56 +146,77 @@ namespace fk {
     template <ND D, typename T, FilterBorder BORDER = FilterBorder::REPLICATE>
     struct BoxFilter {
     private:
-        using Parent = ReadOperation<T, LinearFilterParams<D, T>, T, TF::DISABLED, BoxFilter<D, T, BORDER>>;
+        using Parent = ReadOperation<T, LinearFilterParams<D, T>, T, TF::ENABLED, BoxFilter<D, T, BORDER>>;
         using SelfType = BoxFilter<D, T, BORDER>;
         using FloatVec = VectorType_t<float, cn<T>>;
+        static constexpr int MAX_COLS = 64; // cap for the per-column-sum scratch (ELEMS + kW - 1)
     public:
         FK_STATIC_STRUCT(BoxFilter, SelfType)
         DECLARE_READ_PARENT
 
+        // Scalar path (1 px): used by the non-thread-fused executor path.
         FK_HOST_DEVICE_FUSE auto exec(const Point thread, const ParamsType& params) -> T {
-            const int W = static_cast<int>(params.src.dims.width);
-            const int H = static_cast<int>(params.src.dims.height);
-            const int tx = static_cast<int>(thread.x);
-            const int ty = static_cast<int>(thread.y);
-            FloatVec sum = make_set<FloatVec>(0.f);
-            // Interior fast path: when the whole window lies inside the image, no
-            // per-tap border clamping is needed. This is the common case and avoids
-            // ~4 compares/selects per tap (the dominant cost for small kernels).
-            const bool interior = (tx - params.anchorX >= 0) && (tx - params.anchorX + params.kW - 1 < W) &&
-                                  (ty - params.anchorY >= 0) && (ty - params.anchorY + params.kH - 1 < H);
-            if (interior) {
-                const int baseX = tx - params.anchorX;
-                const int baseY = ty - params.anchorY;
-                for (int ky = 0; ky < params.kH; ++ky) {
-                    for (int kx = 0; kx < params.kW; ++kx) {
-                        const T v = *PtrAccessor<D>::template cr_point<T, T>(Point{baseX + kx, baseY + ky, thread.z}, params.src);
-                        sum = sum + toFloatVecB(v);
-                    }
-                }
+            return filterAt(static_cast<int>(thread.x), static_cast<int>(thread.y), thread.z, params);
+        }
+
+        // Thread-fused path: compute ELEMS_PER_THREAD horizontally-contiguous output
+        // pixels per thread and return the packed vector type the executor stores
+        // coalesced. The group's first output x is thread.x*ELEMS (the executor passes
+        // the group index in thread.x and reads/writes a wide type, matching
+        // PerThreadRead/Write). More work per thread hides latency — what NPP's "Quad"
+        // small-filter kernels do. For single-channel interior groups we further reuse
+        // the overlapping per-column vertical sums across the ELEMS outputs.
+        template <uint ELEMS_PER_THREAD>
+        FK_HOST_DEVICE_FUSE auto exec(const Point thread, const ParamsType& params)
+            -> ThreadFusionType<T, ELEMS_PER_THREAD, T> {
+            if constexpr (ELEMS_PER_THREAD == 1) {
+                return filterAt(static_cast<int>(thread.x), static_cast<int>(thread.y), thread.z, params);
             } else {
-                for (int ky = 0; ky < params.kH; ++ky) {
-                    for (int kx = 0; kx < params.kW; ++kx) {
-                        int sx = tx + kx - params.anchorX;
-                        int sy = ty + ky - params.anchorY;
-                        T v;
-                        if constexpr (BORDER == FilterBorder::REPLICATE) {
-                            sx = sx < 0 ? 0 : (sx >= W ? W - 1 : sx);
-                            sy = sy < 0 ? 0 : (sy >= H ? H - 1 : sy);
-                            v = *PtrAccessor<D>::template cr_point<T, T>(Point{sx, sy, thread.z}, params.src);
-                        } else {
-                            if (sx < 0 || sx >= W || sy < 0 || sy >= H) {
-                                v = make_set<T>(static_cast<VBase<T>>(0));
-                            } else {
-                                v = *PtrAccessor<D>::template cr_point<T, T>(Point{sx, sy, thread.z}, params.src);
+                using WideType = ThreadFusionType<T, ELEMS_PER_THREAD, T>;
+                const int E = static_cast<int>(ELEMS_PER_THREAD);
+                const int baseOutX = static_cast<int>(thread.x) * E;
+                const int oy = static_cast<int>(thread.y);
+                const int W = static_cast<int>(params.src.dims.width);
+                const int H = static_cast<int>(params.src.dims.height);
+                const int firstWinX = baseOutX - params.anchorX;
+                const int lastWinX  = (baseOutX + E - 1) - params.anchorX + params.kW - 1;
+                const bool interiorAll = (firstWinX >= 0) && (lastWinX < W) &&
+                                         (oy - params.anchorY >= 0) && (oy - params.anchorY + params.kH - 1 < H);
+                WideType out;
+                T* o = reinterpret_cast<T*>(&out);
+                if constexpr (cn<T> == 1) {
+                    if (interiorAll && (E + params.kW - 1) <= MAX_COLS) {
+                        const int baseY = oy - params.anchorY;
+                        const int nCols = E + params.kW - 1;
+                        float colSum[MAX_COLS];
+                        for (int c = 0; c < nCols; ++c) {
+                            float s = 0.f;
+                            const int sx = firstWinX + c;
+                            for (int ky = 0; ky < params.kH; ++ky) {
+                                const T v = *PtrAccessor<D>::template cr_point<T, T>(Point{sx, baseY + ky, thread.z}, params.src);
+                                s += static_cast<float>(v);
                             }
+                            colSum[c] = s;
                         }
-                        sum = sum + toFloatVecB(v);
+                        const float area = static_cast<float>(params.kW * params.kH);
+                        #pragma unroll
+                        for (int e = 0; e < E; ++e) {
+                            float sum = 0.f;
+                            for (int kx = 0; kx < params.kW; ++kx) sum += colSum[e + kx];
+                            float q = sum / area;
+                            float t = q < 0.f ? -cxp::floor::f(-q) : cxp::floor::f(q);
+                            o[e] = static_cast<VBase<T>>(t);
+                        }
+                    } else {
+                        #pragma unroll
+                        for (int e = 0; e < E; ++e) o[e] = filterAt(baseOutX + e, oy, thread.z, params);
                     }
+                } else {
+                    #pragma unroll
+                    for (int e = 0; e < E; ++e) o[e] = filterAt(baseOutX + e, oy, thread.z, params);
                 }
+                return out;
             }
-            const float area = static_cast<float>(params.kW * params.kH);
-            return divTruncCast(sum, area);
         }
 
         FK_HOST_DEVICE_FUSE uint num_elems_x(const Point thread, const OperationDataType& opData) { return opData.params.src.dims.width; }
@@ -210,6 +231,46 @@ namespace fk {
             return { { LinearFilterParams<D, T>{ src.ptr(), RawPtr<ND::_2D, float>{}, kW, kH, anchorX, anchorY } } };
         }
     private:
+        // Box filter value at a single output pixel (ox, oy), with interior fast path.
+        FK_HOST_DEVICE_FUSE T filterAt(int ox, int oy, int z, const ParamsType& params) {
+            const int W = static_cast<int>(params.src.dims.width);
+            const int H = static_cast<int>(params.src.dims.height);
+            FloatVec sum = make_set<FloatVec>(0.f);
+            const bool interior = (ox - params.anchorX >= 0) && (ox - params.anchorX + params.kW - 1 < W) &&
+                                  (oy - params.anchorY >= 0) && (oy - params.anchorY + params.kH - 1 < H);
+            if (interior) {
+                const int baseX = ox - params.anchorX;
+                const int baseY = oy - params.anchorY;
+                for (int ky = 0; ky < params.kH; ++ky) {
+                    for (int kx = 0; kx < params.kW; ++kx) {
+                        const T v = *PtrAccessor<D>::template cr_point<T, T>(Point{baseX + kx, baseY + ky, z}, params.src);
+                        sum = sum + toFloatVecB(v);
+                    }
+                }
+            } else {
+                for (int ky = 0; ky < params.kH; ++ky) {
+                    for (int kx = 0; kx < params.kW; ++kx) {
+                        int sx = ox + kx - params.anchorX;
+                        int sy = oy + ky - params.anchorY;
+                        T v;
+                        if constexpr (BORDER == FilterBorder::REPLICATE) {
+                            sx = sx < 0 ? 0 : (sx >= W ? W - 1 : sx);
+                            sy = sy < 0 ? 0 : (sy >= H ? H - 1 : sy);
+                            v = *PtrAccessor<D>::template cr_point<T, T>(Point{sx, sy, z}, params.src);
+                        } else {
+                            if (sx < 0 || sx >= W || sy < 0 || sy >= H) {
+                                v = make_set<T>(static_cast<VBase<T>>(0));
+                            } else {
+                                v = *PtrAccessor<D>::template cr_point<T, T>(Point{sx, sy, z}, params.src);
+                            }
+                        }
+                        sum = sum + toFloatVecB(v);
+                    }
+                }
+            }
+            const float area = static_cast<float>(params.kW * params.kH);
+            return divTruncCast(sum, area);
+        }
         FK_HOST_DEVICE_FUSE FloatVec toFloatVecB(const T& v) {
             if constexpr (cn<T> == 1) return make_set<FloatVec>(static_cast<float>(v));
             else return cxp::cast<FloatVec>::f(v);
