@@ -37,6 +37,7 @@
 #include <fused_kernel/core/execution_model/stream.h>
 #include <fused_kernel/core/execution_model/operation_model/operation_model.h>
 #include <fused_kernel/algorithms/basic_ops/memory_operations.h>
+#include <fused_kernel/algorithms/collective/reduce.h>
 #include <fused_kernel/core/utils/utils.h>
 
 #include <cfloat>
@@ -112,6 +113,23 @@ OnlineSoftmaxState mergeSoftmaxStates(const OnlineSoftmaxState& a,
     return { m, la + lb };
 }
 
+/* Associative combine functor over OnlineSoftmaxState, so the online-
+ * softmax reduction composes with the generic collective primitives
+ * (fk::blockReduceSmem). This is the whole point of the collective layer:
+ * the softmax row reduction is no longer a hand-rolled smem tree, it is
+ * blockReduceSmem<MergeSoftmaxState, BLOCK_SIZE> over this functor. */
+struct MergeSoftmaxState {
+#if defined(__NVCC__)
+    __host__ __device__ __forceinline__
+#else
+    inline
+#endif
+    OnlineSoftmaxState operator()(const OnlineSoftmaxState& a,
+                                  const OnlineSoftmaxState& b) const {
+        return mergeSoftmaxStates(a, b);
+    }
+};
+
 #if defined(__NVCC__)
 
 /* InIOp is an INSTANTIABLE Read or ReadBack IOp (possibly a fusion
@@ -156,14 +174,12 @@ public:
         states[tid] = st;
         __syncthreads();
 
-        for (int stride = BLOCK_SIZE / 2; stride > 0; stride >>= 1) {
-            if (tid < stride) {
-                states[tid] = mergeSoftmaxStates(states[tid], states[tid + stride]);
-            }
-            __syncthreads();
-        }
-        const float m = states[0].m;
-        const float invL = 1.f / states[0].l;
+        // Row reduction over OnlineSoftmaxState — now the generic collective
+        // primitive instead of a hand-rolled smem tree (PR: collective layer).
+        const OnlineSoftmaxState reduced =
+            blockReduceSmem<MergeSoftmaxState, BLOCK_SIZE>(st, states);
+        const float m = reduced.m;
+        const float invL = 1.f / reduced.l;
 
         for (int x = tid; x < width; x += BLOCK_SIZE) {
             // PROLOGUE: element read through the IOp (pass 2)

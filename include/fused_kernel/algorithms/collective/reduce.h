@@ -121,6 +121,29 @@ __device__ __forceinline__ T blockReduce(T val, T* smemScratch,
     return val;
 }
 
+/* ---- blockReduceSmem: whole-block all-reduce over an ARBITRARY type ----
+ * Unlike blockReduce (which uses __shfl_xor and is therefore limited to
+ * shuffle-able scalars), this variant reduces through a pure shared-memory
+ * binary tree, so it works for any trivially-copyable T — including
+ * composite reduction states such as OnlineSoftmaxState. The caller owns a
+ * smem array of BLOCK_SIZE elements and writes its per-thread partial into
+ * smemTree[threadIdx.x] before calling (or pass `val` and we stage it).
+ * Result is broadcast: every thread receives the fully reduced value.
+ * BLOCK_SIZE must be a power of two. */
+template <typename Combine, int BLOCK_SIZE, typename T>
+__device__ __forceinline__ T blockReduceSmem(T val, T* smemTree, Combine combine = {}) {
+    static_assert((BLOCK_SIZE & (BLOCK_SIZE - 1)) == 0, "BLOCK_SIZE must be a power of two");
+    const int tid = threadIdx.x;
+    smemTree[tid] = val;
+    __syncthreads();
+    #pragma unroll
+    for (int stride = BLOCK_SIZE / 2; stride > 0; stride >>= 1) {
+        if (tid < stride) smemTree[tid] = combine(smemTree[tid], smemTree[tid + stride]);
+        __syncthreads();
+    }
+    return smemTree[0];
+}
+
 #else  // host / CPU pass: serial fold so the same template type-checks
 
 template <typename Combine, int WARP_WIDTH = 32, typename T>
@@ -128,6 +151,9 @@ inline T warpReduce(T val, Combine = {}, const unsigned = 0xFFFFFFFFu) { return 
 
 template <typename Combine, int BLOCK_SIZE, typename T>
 inline T blockReduce(T val, T*, Combine = {}, const bool = true) { return val; }
+
+template <typename Combine, int BLOCK_SIZE, typename T>
+inline T blockReduceSmem(T val, T*, Combine = {}) { return val; }
 
 #endif
 
