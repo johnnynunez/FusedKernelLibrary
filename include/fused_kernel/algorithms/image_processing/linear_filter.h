@@ -156,24 +156,42 @@ namespace fk {
         FK_HOST_DEVICE_FUSE auto exec(const Point thread, const ParamsType& params) -> T {
             const int W = static_cast<int>(params.src.dims.width);
             const int H = static_cast<int>(params.src.dims.height);
+            const int tx = static_cast<int>(thread.x);
+            const int ty = static_cast<int>(thread.y);
             FloatVec sum = make_set<FloatVec>(0.f);
-            for (int ky = 0; ky < params.kH; ++ky) {
-                for (int kx = 0; kx < params.kW; ++kx) {
-                    int sx = static_cast<int>(thread.x) + kx - params.anchorX;
-                    int sy = static_cast<int>(thread.y) + ky - params.anchorY;
-                    T v;
-                    if constexpr (BORDER == FilterBorder::REPLICATE) {
-                        sx = sx < 0 ? 0 : (sx >= W ? W - 1 : sx);
-                        sy = sy < 0 ? 0 : (sy >= H ? H - 1 : sy);
-                        v = *PtrAccessor<D>::template cr_point<T, T>(Point{sx, sy, thread.z}, params.src);
-                    } else {
-                        if (sx < 0 || sx >= W || sy < 0 || sy >= H) {
-                            v = make_set<T>(static_cast<VBase<T>>(0));
-                        } else {
-                            v = *PtrAccessor<D>::template cr_point<T, T>(Point{sx, sy, thread.z}, params.src);
-                        }
+            // Interior fast path: when the whole window lies inside the image, no
+            // per-tap border clamping is needed. This is the common case and avoids
+            // ~4 compares/selects per tap (the dominant cost for small kernels).
+            const bool interior = (tx - params.anchorX >= 0) && (tx - params.anchorX + params.kW - 1 < W) &&
+                                  (ty - params.anchorY >= 0) && (ty - params.anchorY + params.kH - 1 < H);
+            if (interior) {
+                const int baseX = tx - params.anchorX;
+                const int baseY = ty - params.anchorY;
+                for (int ky = 0; ky < params.kH; ++ky) {
+                    for (int kx = 0; kx < params.kW; ++kx) {
+                        const T v = *PtrAccessor<D>::template cr_point<T, T>(Point{baseX + kx, baseY + ky, thread.z}, params.src);
+                        sum = sum + toFloatVecB(v);
                     }
-                    sum = sum + toFloatVecB(v);
+                }
+            } else {
+                for (int ky = 0; ky < params.kH; ++ky) {
+                    for (int kx = 0; kx < params.kW; ++kx) {
+                        int sx = tx + kx - params.anchorX;
+                        int sy = ty + ky - params.anchorY;
+                        T v;
+                        if constexpr (BORDER == FilterBorder::REPLICATE) {
+                            sx = sx < 0 ? 0 : (sx >= W ? W - 1 : sx);
+                            sy = sy < 0 ? 0 : (sy >= H ? H - 1 : sy);
+                            v = *PtrAccessor<D>::template cr_point<T, T>(Point{sx, sy, thread.z}, params.src);
+                        } else {
+                            if (sx < 0 || sx >= W || sy < 0 || sy >= H) {
+                                v = make_set<T>(static_cast<VBase<T>>(0));
+                            } else {
+                                v = *PtrAccessor<D>::template cr_point<T, T>(Point{sx, sy, thread.z}, params.src);
+                            }
+                        }
+                        sum = sum + toFloatVecB(v);
+                    }
                 }
             }
             const float area = static_cast<float>(params.kW * params.kH);

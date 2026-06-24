@@ -56,16 +56,23 @@ namespace fk {
         FK_HOST_DEVICE_FUSE auto exec(const Point thread, const ParamsType& params) -> T {
             const int W = static_cast<int>(params.src.dims.width);
             const int H = static_cast<int>(params.src.dims.height);
+            const int tx = static_cast<int>(thread.x);
+            const int ty = static_cast<int>(thread.y);
             using Base = VBase<T>;
             T acc = make_set<T>(static_cast<Base>(0));
             bool any = false;
+            // Interior fast path: whole window inside the image -> skip per-tap clamping.
+            const bool interior = (tx - params.anchorX >= 0) && (tx - params.anchorX + params.maskW - 1 < W) &&
+                                  (ty - params.anchorY >= 0) && (ty - params.anchorY + params.maskH - 1 < H);
             for (int my = 0; my < params.maskH; ++my) {
                 for (int mx = 0; mx < params.maskW; ++mx) {
                     if (params.mask.data[my * params.mask.dims.pitch + mx] == 0) continue;
-                    int sx = static_cast<int>(thread.x) + mx - params.anchorX;
-                    int sy = static_cast<int>(thread.y) + my - params.anchorY;
+                    int sx = tx + mx - params.anchorX;
+                    int sy = ty + my - params.anchorY;
                     T v;
-                    if constexpr (BORDER == MorphBorder::REPLICATE) {
+                    if (interior) {
+                        v = *PtrAccessor<D>::template cr_point<T, T>(Point{sx, sy, thread.z}, params.src);
+                    } else if constexpr (BORDER == MorphBorder::REPLICATE) {
                         sx = sx < 0 ? 0 : (sx >= W ? W - 1 : sx);
                         sy = sy < 0 ? 0 : (sy >= H ? H - 1 : sy);
                         v = *PtrAccessor<D>::template cr_point<T, T>(Point{sx, sy, thread.z}, params.src);
