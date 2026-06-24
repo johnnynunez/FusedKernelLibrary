@@ -17,6 +17,8 @@
 
 #include <fused_kernel/algorithms/basic_ops/algebraic.h>
 #include <fused_kernel/algorithms/basic_ops/arithmetic.h>
+#include <fused_kernel/algorithms/basic_ops/math.h>
+#include <fused_kernel/algorithms/basic_ops/bitwise.h>
 #include <fused_kernel/algorithms/basic_ops/cast.h>
 #include <fused_kernel/algorithms/basic_ops/vector_ops.h>
 #include <fused_kernel/algorithms/basic_ops/logical.h>

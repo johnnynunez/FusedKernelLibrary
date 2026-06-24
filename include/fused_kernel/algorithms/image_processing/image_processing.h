@@ -20,6 +20,9 @@
 #include <fused_kernel/algorithms/image_processing/crop.h>
 #include <fused_kernel/algorithms/image_processing/deinterlace.h>
 #include <fused_kernel/algorithms/image_processing/interpolation.h>
+#include <fused_kernel/algorithms/image_processing/linear_filter.h>
+#include <fused_kernel/algorithms/image_processing/median_filter.h>
+#include <fused_kernel/algorithms/image_processing/morphology.h>
 #include <fused_kernel/algorithms/image_processing/resize.h>
 #include <fused_kernel/algorithms/image_processing/saturate.h>
 #include <fused_kernel/algorithms/image_processing/warping.h>
